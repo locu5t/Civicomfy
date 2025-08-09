@@ -128,6 +128,30 @@ export function modalTemplate(settings = {}) {
                 </div>
               </div>
               <div class="civitai-settings-section">
+                <h4>Download Engine</h4>
+                <div class="civitai-form-group">
+                  <label for="civitai-settings-downloader-type">Downloader Type</label>
+                  <select id="civitai-settings-downloader-type" class="civitai-select" required>
+                    <option value="aria2">Aria2 (Recommended)</option>
+                    <option value="legacy">Legacy (Built-in)</option>
+                  </select>
+                  <p id="civitai-downloader-status" style="font-size: 0.85em; margin-top: 5px;"></p>
+                </div>
+                <div id="civitai-aria2-settings" class="civitai-aria2-settings" style="margin-left: 20px;">
+                  <div class="civitai-form-group">
+                    <label for="civitai-settings-aria2-connections">Max Connections per Server</label>
+                    <input type="number" id="civitai-settings-aria2-connections" class="civitai-input" value="16" min="1" max="32" step="1">
+                    <p style="font-size: 0.85em; color: #bbb; margin-top: 5px;">Higher values = faster downloads but more server load</p>
+                  </div>
+                  <div class="civitai-form-group">
+                    <label for="civitai-settings-aria2-concurrent">Concurrent Downloads</label>
+                    <input type="number" id="civitai-settings-aria2-concurrent" class="civitai-input" value="3" min="1" max="10" step="1">
+                    <p style="font-size: 0.85em; color: #bbb; margin-top: 5px;">Number of files to download simultaneously</p>
+                  </div>
+                  <button type="button" id="civitai-test-aria2" class="civitai-button secondary small">Test Aria2</button>
+                </div>
+              </div>
+              <div class="civitai-settings-section">
                 <h4>Interface & Search</h4>
                 <div class="civitai-form-group inline">
                   <input type="checkbox" id="civitai-settings-auto-open-status" class="civitai-checkbox">

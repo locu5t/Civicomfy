@@ -1,0 +1,13 @@
+# Aria2 Integration (Enhanced Download Engine)
+aria2p>=0.12.0
+
+
+# Installation Notes:
+# 1. This extension is designed to work with ComfyUI
+# 2. ComfyUI may already provide some of these dependencies
+# 3. Install with: pip install -r requirements.txt
+# 4. For Aria2 functionality, also install aria2 binary:
+#    - macOS: brew install aria2
+#    - Ubuntu/Debian: sudo apt install aria2
+#    - Windows: Download from https://aria2.github.io/
+# 5. The extension will fall back to built-in downloader if aria2 is unavailable

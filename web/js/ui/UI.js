@@ -2,7 +2,7 @@ import { Feedback } from "./feedback.js";
 import { setupEventListeners } from "./handlers/eventListeners.js";
 import { handleDownloadSubmit, fetchAndDisplayDownloadPreview, debounceFetchDownloadPreview } from "./handlers/downloadHandler.js";
 import { handleSearchSubmit } from "./handlers/searchHandler.js";
-import { handleSettingsSave, loadAndApplySettings, loadSettingsFromCookie, saveSettingsToCookie, applySettings, getDefaultSettings } from "./handlers/settingsHandler.js";
+import { handleSettingsSave, loadAndApplySettings, loadSettingsFromCookie, saveSettingsToCookie, applySettings, getDefaultSettings, loadDownloaderSettings, toggleAria2Settings, updateDownloaderStatus, testAria2 } from "./handlers/settingsHandler.js";
 import { startStatusUpdates, stopStatusUpdates, updateStatus, handleCancelDownload, handleRetryDownload, handleOpenPath, handleClearHistory } from "./handlers/statusHandler.js";
 import { renderSearchResults } from "./searchRenderer.js";
 import { renderDownloadList } from "./statusRenderer.js";
@@ -85,6 +85,12 @@ export class CivitaiDownloaderUI {
         this.settingsDefaultTypeSelect = this.modal.querySelector('#civitai-settings-default-type');
         this.settingsAutoOpenCheckbox = this.modal.querySelector('#civitai-settings-auto-open-status');
         this.settingsSaveButton = this.modal.querySelector('#civitai-settings-save');
+        
+        // Downloader Settings
+        this.settingsDownloaderTypeSelect = this.modal.querySelector('#civitai-settings-downloader-type');
+        this.settingsAria2ConnectionsInput = this.modal.querySelector('#civitai-settings-aria2-connections');
+        this.settingsAria2ConcurrentInput = this.modal.querySelector('#civitai-settings-aria2-concurrent');
+        this.testAria2Button = this.modal.querySelector('#civitai-test-aria2');
 
         // Toast Notification
         this.toastElement = this.modal.querySelector('#civitai-toast');
@@ -106,6 +112,7 @@ export class CivitaiDownloaderUI {
         await this.populateModelTypes();
         await this.populateBaseModels();
         this.loadAndApplySettings();
+        await this.loadDownloaderSettings();
     }
 
     async populateModelTypes() {
@@ -294,6 +301,10 @@ export class CivitaiDownloaderUI {
     saveSettingsToCookie = () => saveSettingsToCookie(this);
     applySettings = () => applySettings(this);
     handleSettingsSave = () => handleSettingsSave(this);
+    loadDownloaderSettings = () => loadDownloaderSettings(this);
+    toggleAria2Settings = () => toggleAria2Settings(this);
+    updateDownloaderStatus = () => updateDownloaderStatus(this);
+    testAria2 = () => testAria2(this);
     handleDownloadSubmit = () => handleDownloadSubmit(this);
     handleSearchSubmit = () => handleSearchSubmit(this);
     fetchAndDisplayDownloadPreview = () => fetchAndDisplayDownloadPreview(this);

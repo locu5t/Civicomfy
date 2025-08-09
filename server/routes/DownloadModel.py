@@ -9,10 +9,10 @@ from aiohttp import web
 
 import server # ComfyUI server instance
 from ..utils import get_request_json
-from ...downloader.manager import manager as download_manager
 from ...api.civitai import CivitaiAPI
 from ...utils.helpers import get_model_dir, parse_civitai_input, sanitize_filename, select_primary_file
 from ...config import METADATA_SUFFIX, PREVIEW_SUFFIX
+from ...utils.downloader_factory import get_active_download_manager
 
 prompt_server = server.PromptServer.instance
 
@@ -404,6 +404,7 @@ async def route_download_model(request):
             "civitai_primary_file": primary_file, # Pass the selected file object
         }
 
+        download_manager = get_active_download_manager()
         download_id = download_manager.add_to_queue(download_info)
 
         # Return queued status and essential details for the UI

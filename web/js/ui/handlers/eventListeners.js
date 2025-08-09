@@ -35,6 +35,19 @@ export function setupEventListeners(ui) {
         ui.handleSettingsSave();
     });
 
+    // Downloader type selection
+    if (ui.settingsDownloaderTypeSelect) {
+        ui.settingsDownloaderTypeSelect.addEventListener('change', () => {
+            ui.toggleAria2Settings();
+            ui.updateDownloaderStatus();
+        });
+    }
+
+    // Test Aria2 button
+    if (ui.testAria2Button) {
+        ui.testAria2Button.addEventListener('click', () => ui.testAria2());
+    }
+
     // Download form inputs
     ui.modelUrlInput.addEventListener('input', () => ui.debounceFetchDownloadPreview());
     ui.modelUrlInput.addEventListener('paste', () => ui.debounceFetchDownloadPreview(0));

@@ -3,7 +3,7 @@
 # ================================================
 from aiohttp import web
 import server # ComfyUI server instance
-from ...downloader.manager import manager as download_manager
+from ...utils.downloader_factory import get_active_download_manager, get_downloader_info
 
 prompt_server = server.PromptServer.instance
 
@@ -11,7 +11,13 @@ prompt_server = server.PromptServer.instance
 async def route_get_status(request):
     """API Endpoint to get the status of downloads."""
     try:
+        download_manager = get_active_download_manager()
         status = download_manager.get_status()
+        
+        # Add downloader info to status
+        downloader_info = get_downloader_info()
+        status["downloader_info"] = downloader_info
+        
         return web.json_response(status)
     except Exception as e:
         print(f"Error getting download status: {e}")

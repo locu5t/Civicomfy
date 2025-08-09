@@ -9,6 +9,7 @@
 from . import CancelDownload
 from . import ClearHistory
 from . import DownloadModel
+from . import DownloaderSettings
 from . import GetBaseModels
 from . import GetModelDetails
 from . import GetModelTypes

@@ -13,6 +13,14 @@ DOWNLOAD_TIMEOUT = 60 # Timeout for individual download chunks/requests (seconds
 HEAD_REQUEST_TIMEOUT = 25 # Timeout for initial HEAD request (seconds)
 METADATA_DOWNLOAD_TIMEOUT = 20 # Timeout for downloading thumbnail (seconds)
 
+# --- Aria2 Configuration ---
+ARIA2_RPC_PORT = 6800
+ARIA2_MAX_CONCURRENT_DOWNLOADS = 3
+ARIA2_MAX_CONNECTION_PER_SERVER = 16
+ARIA2_MIN_SPLIT_SIZE = "1M"
+ARIA2_RPC_SECRET = None  # Will be auto-generated if None
+USE_ARIA2_DOWNLOADER = True  # Feature flag to switch between old and new downloader
+
 # --- Paths ---
 # The root directory of *this specific plugin/extension*
 # Calculated based on the location of this config.py file

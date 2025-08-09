@@ -6,13 +6,14 @@ import json
 from aiohttp import web
 
 import server # ComfyUI server instance
-from ...downloader.manager import manager as download_manager
+from ...utils.downloader_factory import get_active_download_manager
 
 prompt_server = server.PromptServer.instance
 
 @prompt_server.routes.post("/civitai/retry")
 async def route_retry_download(request):
     """API Endpoint to retry a failed/cancelled download."""
+    download_manager = get_active_download_manager()
     if not download_manager:
         return web.json_response({"error": "Download Manager not initialized"}, status=500)
 

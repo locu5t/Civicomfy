@@ -5,7 +5,7 @@ import json
 from aiohttp import web
 import server # ComfyUI server instance
 from ..utils import get_request_json
-from ...downloader.manager import manager as download_manager
+from ...utils.downloader_factory import get_active_download_manager
 
 prompt_server = server.PromptServer.instance
 
@@ -19,6 +19,7 @@ async def route_cancel_download(request):
             print("not download id " + download_id)
             raise web.HTTPBadRequest(reason="Missing 'download_id'")
 
+        download_manager = get_active_download_manager()
         success = download_manager.cancel_download(download_id)
         if success:
             return web.json_response({

@@ -5,13 +5,14 @@ import asyncio
 from aiohttp import web
 
 import server # ComfyUI server instance
-from ...downloader.manager import manager as download_manager
+from ...utils.downloader_factory import get_active_download_manager
 
 prompt_server = server.PromptServer.instance
 
 @prompt_server.routes.post("/civitai/clear_history")
 async def route_clear_history(request):
     """API Endpoint to clear the download history."""
+    download_manager = get_active_download_manager()
     if not download_manager:
         return web.json_response({"error": "Download Manager not initialized"}, status=500)
 
