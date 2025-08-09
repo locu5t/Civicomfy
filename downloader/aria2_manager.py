@@ -74,14 +74,14 @@ class Aria2DownloadManager:
                 conn_info = self.daemon.get_connection_info()
                 self.client = aria2p.API(
                     aria2p.Client(
-                        host=conn_info["host"],
+                        host=f'http://{conn_info["host"]}',
                         port=conn_info["port"],
                         secret=conn_info["secret"]
                     )
                 )
                 # Test connection
-                version = self.client.get_version()
-                print(f"[Aria2Manager] Connected to aria2 {version.version}")
+                version = self.client.client.get_version()
+                print(f"[Aria2Manager] Connected to aria2 {version['version']}")
                 return True
                 
             except Exception as e:
@@ -282,7 +282,8 @@ class Aria2DownloadManager:
                     continue
                 
                 # Get completed/failed downloads
-                stopped_downloads = self.client.get_downloads(statuses=["complete", "error", "removed"])
+                all_downloads = self.client.get_downloads()
+                stopped_downloads = [d for d in all_downloads if d.status in ["complete", "error", "removed"]]
                 
                 with self.lock:
                     for download in stopped_downloads:
