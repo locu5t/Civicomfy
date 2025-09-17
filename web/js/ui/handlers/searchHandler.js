@@ -26,8 +26,8 @@ function sanitizePathSegment(value, fallback = '') {
     segment = segment.replace(/^_+|_+$/g, '');
     segment = segment.replace(/^\.+/, '').replace(/\.+$/, '');
     segment = segment.slice(0, 80);
-    segment = segment.toLowerCase();
-    if (RESERVED_SEGMENTS.has(segment)) {
+    const lower = segment.toLowerCase();
+    if (RESERVED_SEGMENTS.has(lower)) {
       segment = `_${segment}`;
     }
     return segment;
@@ -85,8 +85,10 @@ function resolveBaseModel(details, card, versionId) {
   return base || '';
 }
 
-function buildAutoSubdir(card, details, preferredType, baseModelOverride) {
-  if (!card) return '';
+function buildAutoFolderStructure(card, details, preferredType, baseModelOverride) {
+  const empty = { typeSegment: '', baseSegment: '', modelSegment: '', versionSegment: '' };
+  if (!card) return empty;
+
   const modelId = details?.model_id || details?.modelId || card.dataset.modelId;
   const versionId = details?.version_id || details?.versionId || card.dataset.versionId;
 
@@ -111,21 +113,20 @@ function buildAutoSubdir(card, details, preferredType, baseModelOverride) {
 
   const modelSegment = sanitizePathSegment(
     details?.model_name || details?.model?.name || card.dataset.modelName,
-    modelId ? `model-${modelId}` : ''
+    modelId ? `model-${modelId}` : 'model'
   );
 
   const versionSegment = sanitizePathSegment(
     details?.version_name || details?.model_version_name || card.dataset.versionName,
-    versionId ? `version-${versionId}` : ''
+    versionId ? `version-${versionId}` : 'version'
   );
 
-  const segments = [];
-  if (!preferredTypeSegment && typeSegment) segments.push(typeSegment);
-  if (baseSegment) segments.push(baseSegment);
-  if (modelSegment) segments.push(modelSegment);
-  if (versionSegment) segments.push(versionSegment);
-
-  return segments.join('/');
+  return {
+    typeSegment,
+    baseSegment,
+    modelSegment,
+    versionSegment,
+  };
 }
 
 function toInt(value) {
@@ -445,13 +446,22 @@ async function handleQuickDownload(card, ctx) {
     if (details.version_name) card.dataset.versionName = details.version_name;
     if (details.version_id) card.dataset.versionId = details.version_id;
     const selectedModelType = inferred || settings?.defaultModelType || card.dataset.modelType || '';
+    const folderStructure = buildAutoFolderStructure(card, details, selectedModelType, resolvedBaseModel);
+    const resolvedModelType = selectedModelType || folderStructure.typeSegment || '';
     const defaults = {
-      modelType: selectedModelType,
-      subdir: buildAutoSubdir(card, details, selectedModelType, resolvedBaseModel),
+      modelType: resolvedModelType,
+      baseFolder: folderStructure.baseSegment,
+      modelFolder: folderStructure.modelSegment,
+      versionFolder: folderStructure.versionSegment,
       filename: '',
     };
     if (defaults.modelType) card.dataset.modelType = defaults.modelType;
     populateDrawerWithDetails(card, details, modelTypeOptions, defaults);
+    if (Array.isArray(details?.model_versions) && details.model_versions.length > 0) {
+      card.__civitaiVersions = details.model_versions;
+    }
+    ensurePathPreviewListeners(card);
+    updatePathPreview(card);
     if (versionSelect && details.version_id) {
       versionSelect.value = String(details.version_id);
     }
@@ -558,7 +568,9 @@ function buildPayloadFromDrawer(card, settings) {
   const fileRadio = card.querySelector('.civi-file-radio:checked');
   const fileId = fileRadio ? Number(fileRadio.value) : undefined;
   const modelType = card.querySelector('.civi-target-root')?.value || card.dataset.modelType || settings?.defaultModelType || '';
-  const subdir = card.querySelector('.civi-subdir-input')?.value?.trim() || '';
+  const folders = collectFolderSegments(card);
+  const subdirParts = [folders.baseSegment, folders.modelSegment, folders.versionSegment].filter(Boolean);
+  const subdir = subdirParts.join('/');
   const filename = card.querySelector('.civi-filename-input')?.value?.trim() || '';
   const force = !!card.querySelector('.civi-force-checkbox')?.checked;
 
@@ -573,6 +585,186 @@ function buildPayloadFromDrawer(card, settings) {
     force_redownload: force,
     api_key: settings?.apiKey || '',
   };
+}
+
+function collectFolderSegments(card) {
+  if (!card) {
+    return {
+      rootValue: '',
+      rootLabel: '',
+      sanitizedRoot: '',
+      baseSegment: '',
+      modelSegment: '',
+      versionSegment: '',
+    };
+  }
+
+  const rootSelect = card.querySelector('.civi-target-root');
+  const rawRoot = rootSelect ? rootSelect.value : card.dataset.modelType || '';
+  const rootValue = typeof rawRoot === 'string' ? rawRoot.trim() : '';
+  const rootLabel = rootSelect ? (rootSelect.selectedOptions[0]?.textContent || '').trim() : '';
+  const sanitizedRoot = sanitizePathSegment(rootValue, '');
+
+  const baseInput = card.querySelector('.civi-base-folder-input');
+  const modelInput = card.querySelector('.civi-model-folder-input');
+  const versionInput = card.querySelector('.civi-version-folder-input');
+
+  return {
+    rootValue,
+    rootLabel,
+    sanitizedRoot: sanitizedRoot || rootValue,
+    baseSegment: sanitizePathSegment(baseInput?.value, ''),
+    modelSegment: sanitizePathSegment(modelInput?.value, ''),
+    versionSegment: sanitizePathSegment(versionInput?.value, ''),
+  };
+}
+
+function updatePathPreview(card) {
+  if (!card) return;
+  const previewEl = card.querySelector('.civi-path-preview');
+  if (!previewEl) return;
+
+  const folders = collectFolderSegments(card);
+  if (!folders.sanitizedRoot) {
+    previewEl.textContent = 'Select a model type to see the final path.';
+    return;
+  }
+  const parts = [];
+  if (folders.sanitizedRoot) parts.push(folders.sanitizedRoot);
+  if (folders.baseSegment) parts.push(folders.baseSegment);
+  if (folders.modelSegment) parts.push(folders.modelSegment);
+  if (folders.versionSegment) parts.push(folders.versionSegment);
+
+  if (parts.length === 1) {
+    previewEl.textContent = `models/${parts[0]}`;
+    return;
+  }
+
+  if (parts.length === 0) {
+    previewEl.textContent = 'Select a model type and folders to see the final path.';
+    return;
+  }
+
+  previewEl.textContent = `models/${parts.join('/')}`;
+}
+
+function autoFillFolderInput(card, input, autoKey, dirtyKey, value) {
+  if (!card || !input) return;
+  const sanitized = sanitizePathSegment(value, '');
+  input.value = sanitized || '';
+  if (card.dataset) {
+    if (autoKey) card.dataset[autoKey] = sanitized || '';
+    if (dirtyKey) card.dataset[dirtyKey] = 'false';
+  }
+}
+
+function findVersionInfo(card, versionId) {
+  if (!card || !versionId) return null;
+  const versions = Array.isArray(card.__civitaiVersions) ? card.__civitaiVersions : [];
+  return (
+    versions.find((version) => {
+      if (!version) return false;
+      const vid =
+        version.id ??
+        version.versionId ??
+        version.modelVersionId ??
+        version.model_version_id ??
+        version.model_versionId;
+      if (!vid && vid !== 0) return false;
+      return String(vid) === String(versionId);
+    }) || null
+  );
+}
+
+function ensurePathPreviewListeners(card) {
+  if (!card || card.__civiPathListenersAttached) return;
+  card.__civiPathListenersAttached = true;
+
+  const rootSelect = card.querySelector('.civi-target-root');
+  const baseInput = card.querySelector('.civi-base-folder-input');
+  const modelInput = card.querySelector('.civi-model-folder-input');
+  const versionInput = card.querySelector('.civi-version-folder-input');
+  const versionSelect = card.querySelector('.civi-version-select');
+
+  if (rootSelect) {
+    rootSelect.addEventListener('change', () => {
+      if (card.dataset) {
+        card.dataset.modelType = rootSelect.value || '';
+      }
+      updatePathPreview(card);
+    });
+  }
+
+  if (baseInput) {
+    baseInput.addEventListener('input', () => {
+      if (card.dataset) card.dataset.userBaseFolderDirty = 'true';
+      updatePathPreview(card);
+    });
+  }
+
+  if (modelInput) {
+    modelInput.addEventListener('input', () => {
+      if (card.dataset) card.dataset.userModelFolderDirty = 'true';
+      updatePathPreview(card);
+    });
+  }
+
+  if (versionInput) {
+    versionInput.addEventListener('input', () => {
+      if (card.dataset) card.dataset.userVersionFolderDirty = 'true';
+      updatePathPreview(card);
+    });
+  }
+
+  if (versionSelect) {
+    versionSelect.addEventListener('change', () => {
+      const versionId = versionSelect.value || '';
+      if (card.dataset) {
+        card.dataset.versionId = versionId;
+      }
+
+      const versionInfo = findVersionInfo(card, versionId);
+      const optionText = versionSelect.selectedOptions?.[0]?.textContent || '';
+      const versionName =
+        versionInfo?.name ||
+        versionInfo?.versionName ||
+        versionInfo?.model_version_name ||
+        versionInfo?.modelVersionName ||
+        optionText;
+      if (card.dataset && versionName) {
+        card.dataset.versionName = versionName;
+      }
+
+      const rootValue = rootSelect?.value || card.dataset.modelType || '';
+      const sanitizedType = sanitizePathSegment(rootValue, '');
+      const baseName =
+        versionInfo?.baseModel ||
+        versionInfo?.base_model ||
+        versionInfo?.base ||
+        card.dataset.baseModel ||
+        '';
+      if (baseName && card.dataset) {
+        card.dataset.baseModel = baseName;
+      }
+      const baseAuto = sanitizePathSegment(baseName, sanitizedType ? `${sanitizedType}_base` : 'base_model');
+      if (card.dataset) {
+        card.dataset.autoBaseFolder = baseAuto;
+      }
+      if (card.dataset?.userBaseFolderDirty !== 'true') {
+        autoFillFolderInput(card, baseInput, 'autoBaseFolder', 'userBaseFolderDirty', baseAuto);
+      }
+
+      const versionAuto = sanitizePathSegment(versionName, versionId ? `version-${versionId}` : 'version');
+      if (card.dataset) {
+        card.dataset.autoVersionFolder = versionAuto;
+      }
+      if (card.dataset?.userVersionFolderDirty !== 'true') {
+        autoFillFolderInput(card, versionInput, 'autoVersionFolder', 'userVersionFolderDirty', versionAuto);
+      }
+
+      updatePathPreview(card);
+    });
+  }
 }
 
 function attachQueueId(card, queueId) {

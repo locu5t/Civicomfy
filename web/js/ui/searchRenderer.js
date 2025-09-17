@@ -65,12 +65,21 @@ export function createCardElement(model) {
         </div>
 
         <div class="civi-drawer-targets">
-          <label>Target location:
+          <label>Model type:
             <select class="civi-target-root"></select>
           </label>
-          <label>Subfolder:
-            <input class="civi-subdir-input" placeholder="optional subfolder">
-          </label>
+          <div class="civi-folder-fields">
+            <label>Base model folder:
+              <input class="civi-base-folder-input" placeholder="e.g. Illustrious">
+            </label>
+            <label>Model name folder:
+              <input class="civi-model-folder-input" placeholder="e.g. catslora">
+            </label>
+            <label>Version folder:
+              <input class="civi-version-folder-input" placeholder="e.g. catsv1">
+            </label>
+          </div>
+          <div class="civi-path-preview" aria-live="polite"></div>
           <label>Filename override:
             <input class="civi-filename-input" placeholder="optional filename.safetensors">
           </label>
@@ -203,9 +212,31 @@ export function populateDrawerWithDetails(cardEl, details, modelTypeOptions = []
     }
   }
 
-  const subdirInput = cardEl.querySelector('.civi-subdir-input');
-  if (subdirInput && defaults?.subdir !== undefined) {
-    subdirInput.value = defaults.subdir;
+  const baseInput = cardEl.querySelector('.civi-base-folder-input');
+  if (baseInput && defaults?.baseFolder !== undefined) {
+    baseInput.value = defaults.baseFolder || '';
+    if (cardEl.dataset) {
+      cardEl.dataset.autoBaseFolder = defaults.baseFolder || '';
+      cardEl.dataset.userBaseFolderDirty = 'false';
+    }
+  }
+
+  const modelInput = cardEl.querySelector('.civi-model-folder-input');
+  if (modelInput && defaults?.modelFolder !== undefined) {
+    modelInput.value = defaults.modelFolder || '';
+    if (cardEl.dataset) {
+      cardEl.dataset.autoModelFolder = defaults.modelFolder || '';
+      cardEl.dataset.userModelFolderDirty = 'false';
+    }
+  }
+
+  const versionInput = cardEl.querySelector('.civi-version-folder-input');
+  if (versionInput && defaults?.versionFolder !== undefined) {
+    versionInput.value = defaults.versionFolder || '';
+    if (cardEl.dataset) {
+      cardEl.dataset.autoVersionFolder = defaults.versionFolder || '';
+      cardEl.dataset.userVersionFolderDirty = 'false';
+    }
   }
 
   const filenameInput = cardEl.querySelector('.civi-filename-input');
