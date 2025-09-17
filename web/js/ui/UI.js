@@ -2,9 +2,8 @@ import { Feedback } from "./feedback.js";
 import { setupEventListeners } from "./handlers/eventListeners.js";
 import { handleSearchSubmit, initSearchHandlers } from "./handlers/searchHandler.js";
 import { handleSettingsSave, loadAndApplySettings, loadSettingsFromCookie, saveSettingsToCookie, applySettings, getDefaultSettings } from "./handlers/settingsHandler.js";
-import { startStatusUpdates, stopStatusUpdates, updateStatus, handleCancelDownload, handleRetryDownload, handleOpenPath, handleClearHistory } from "./handlers/statusHandler.js";
+import { startStatusUpdates, stopStatusUpdates, updateStatus, handleCancelDownload, handleRetryDownload, handleOpenPath } from "./handlers/statusHandler.js";
 import { renderSearchResults as renderSearchCards } from "./searchRenderer.js";
-import { renderDownloadList } from "./statusRenderer.js";
 import { renderLibraryList } from "./libraryRenderer.js";
 import { modalTemplate } from "./templates.js";
 import { CivitaiDownloaderAPI } from "../api/civitai.js";
@@ -66,25 +65,13 @@ export class CivitaiDownloaderUI {
         this.searchSubmitButton = this.modal.querySelector('#civitai-search-submit');
         this.searchResultsContainer = this.modal.querySelector('#civitai-search-results');
         this.searchPaginationContainer = this.modal.querySelector('#civitai-search-pagination');
-
-        // Status Tab
-        this.statusContent = this.modal.querySelector('#civitai-status-content');
-        this.activeListContainer = this.modal.querySelector('#civitai-active-list');
-        this.queuedListContainer = this.modal.querySelector('#civitai-queued-list');
-        this.historyListContainer = this.modal.querySelector('#civitai-history-list');
-        this.statusIndicator = this.modal.querySelector('#civitai-status-indicator');
-        this.activeCountSpan = this.modal.querySelector('#civitai-active-count');
-        this.clearHistoryButton = this.modal.querySelector('#civitai-clear-history-button');
-        this.confirmClearModal = this.modal.querySelector('#civitai-confirm-clear-modal');
-        this.confirmClearYesButton = this.modal.querySelector('#civitai-confirm-clear-yes');
-        this.confirmClearNoButton = this.modal.querySelector('#civitai-confirm-clear-no');
+        this.downloadIndicator = this.modal.querySelector('#civitai-download-indicator');
 
         // Settings Tab
         this.settingsForm = this.modal.querySelector('#civitai-settings-form');
         this.settingsApiKeyInput = this.modal.querySelector('#civitai-settings-api-key');
         this.settingsConnectionsInput = this.modal.querySelector('#civitai-settings-connections');
         this.settingsDefaultTypeSelect = this.modal.querySelector('#civitai-settings-default-type');
-        this.settingsAutoOpenCheckbox = this.modal.querySelector('#civitai-settings-auto-open-status');
         this.settingsHideMatureCheckbox = this.modal.querySelector('#civitai-settings-hide-mature');
         this.settingsMergedUiCheckbox = this.modal.querySelector('#civitai-settings-merged-ui');
         this.settingsNsfwThresholdInput = this.modal.querySelector('#civitai-settings-nsfw-threshold');
@@ -177,9 +164,7 @@ export class CivitaiDownloaderUI {
         this.tabContents[tabId].scrollTop = 0;
         this.activeTab = tabId;
 
-        if (tabId === 'status') {
-            this.updateStatus();
-        } else if (tabId === 'settings') {
+        if (tabId === 'settings') {
             this.applySettings();
         } else if (tabId === 'library') {
             if (this.libraryLoaded) {
@@ -187,6 +172,8 @@ export class CivitaiDownloaderUI {
             } else {
                 this.loadLibraryItems(true);
             }
+        } else if (tabId === 'search') {
+            this.updateStatus();
         }
     }
 
@@ -195,7 +182,7 @@ export class CivitaiDownloaderUI {
         this.modal?.classList.add('open');
         document.body.style.setProperty('overflow', 'hidden', 'important');
         this.startStatusUpdates();
-        if (this.activeTab === 'status') this.updateStatus();
+        this.updateStatus();
         if (this.activeTab === 'library') this.loadLibraryItems(!this.libraryLoaded);
         if (!this.settings.apiKey) this.switchTab('settings');
     }
@@ -258,16 +245,293 @@ export class CivitaiDownloaderUI {
                 return entries.map(([value, label]) => ({ value, label }));
             },
             inferModelType: (type) => this.inferFolderFromCivitaiType(type),
+            onQueueAttached: (card, queueId) => this.showQueuedStatus(card, queueId),
             onQueueSuccess: () => {
                 this.libraryLoaded = false;
-                if (this.settings.autoOpenStatusTab) {
-                    this.switchTab('status');
-                } else {
-                    this.updateStatus();
-                }
+                this.updateStatus();
             },
             onRequireApiKey: () => this.switchTab('settings'),
         });
+    }
+
+    showQueuedStatus(card, queueId) {
+        if (!card) return;
+        if (queueId !== undefined && queueId !== null && card.dataset) {
+            card.dataset.queueId = String(queueId);
+        }
+        this.syncCardStatus(card, { id: queueId, status: 'queued', progress: 0 });
+    }
+
+    updateCardStatuses(statusData = this.statusData) {
+        if (!this.searchResultsContainer) return;
+        if (!statusData || typeof statusData !== 'object') return;
+
+        const statusMap = new Map();
+        const addToMap = (list) => {
+            if (!Array.isArray(list)) return;
+            list.forEach(item => {
+                if (!item || item.id === undefined || item.id === null) return;
+                statusMap.set(String(item.id), item);
+            });
+        };
+
+        addToMap(statusData.queue);
+        addToMap(statusData.active);
+        if (Array.isArray(statusData.history)) {
+            statusData.history.forEach(item => {
+                if (!item || item.id === undefined || item.id === null) return;
+                const idStr = String(item.id);
+                if (!statusMap.has(idStr)) statusMap.set(idStr, item);
+            });
+        }
+
+        const cards = this.searchResultsContainer.querySelectorAll('.civi-card[data-queue-id]');
+        cards.forEach(card => {
+            const queueId = card.dataset.queueId;
+            if (!queueId) return;
+            const status = statusMap.get(queueId);
+            if (status) {
+                this.syncCardStatus(card, status);
+            }
+        });
+    }
+
+    syncCardStatus(card, status) {
+        if (!card || !status) return;
+        const elements = this.getCardStatusElements(card);
+        if (!elements) return;
+        const { footer, progress, text, error, actions } = elements;
+
+        const downloadId = status.id ?? status.download_id ?? status.queueId ?? card.dataset?.queueId;
+        if (downloadId !== undefined && downloadId !== null && card.dataset) {
+            card.dataset.queueId = String(downloadId);
+        }
+
+        const rawState = ((status.status || status.state || '') + '').toLowerCase() || 'queued';
+        if (card.dataset) card.dataset.downloadStatus = rawState;
+
+        const statusLabels = {
+            queued: 'Queued',
+            starting: 'Starting',
+            downloading: 'Downloading',
+            completed: 'Completed',
+            failed: 'Failed',
+            cancelled: 'Cancelled',
+        };
+        const friendlyStatus = statusLabels[rawState] || (rawState ? rawState.charAt(0).toUpperCase() + rawState.slice(1) : 'Status');
+
+        let progressValue = Number(status.progress);
+        if (!Number.isFinite(progressValue)) {
+            const percent = Number(status.percent);
+            if (Number.isFinite(percent)) {
+                progressValue = percent;
+            } else if (rawState === 'completed') {
+                progressValue = 100;
+            } else {
+                progressValue = 0;
+            }
+        }
+        progressValue = Math.max(0, Math.min(100, progressValue));
+
+        const sizeCandidates = [status.known_size, status.file_size, status.size, status.size_bytes, status.total_bytes];
+        const totalBytes = sizeCandidates.map(v => Number(v)).find(v => Number.isFinite(v) && v > 0) || 0;
+        const downloadedCandidates = [status.downloaded_bytes, status.downloadedBytes, status.current_size, status.bytes_downloaded];
+        let downloadedBytes = downloadedCandidates.map(v => Number(v)).find(v => Number.isFinite(v) && v >= 0);
+        if (!Number.isFinite(downloadedBytes) && totalBytes > 0 && Number.isFinite(progressValue)) {
+            downloadedBytes = Math.min(totalBytes, Math.round(totalBytes * (progressValue / 100)));
+        }
+
+        const speedText = this.formatSpeed(status.speed);
+
+        progress.style.setProperty('--civi-progress', `${progressValue}%`);
+        progress.setAttribute('aria-valuenow', String(Math.round(progressValue)));
+        progress.classList.toggle('failed', rawState === 'failed');
+        progress.classList.toggle('completed', rawState === 'completed');
+        progress.classList.toggle('indeterminate', rawState === 'queued' || rawState === 'starting');
+
+        let progressLabel = friendlyStatus;
+        if (rawState === 'downloading') {
+            progressLabel = `${Math.round(progressValue)}%${speedText ? ` • ${speedText}` : ''}`;
+        } else if (rawState === 'completed') {
+            progressLabel = 'Completed';
+        } else if (rawState === 'failed') {
+            progressLabel = 'Failed';
+        } else if (rawState === 'cancelled') {
+            progressLabel = 'Cancelled';
+        } else if (rawState === 'queued') {
+            progressLabel = 'Queued';
+        } else if (rawState === 'starting') {
+            progressLabel = 'Starting';
+        }
+        progress.textContent = progressLabel;
+
+        const infoParts = [];
+        if (rawState === 'downloading' && totalBytes > 0 && Number.isFinite(downloadedBytes)) {
+            infoParts.push(`${this.formatBytes(downloadedBytes)} / ${this.formatBytes(totalBytes)}`);
+        } else if (rawState === 'completed' && totalBytes > 0) {
+            infoParts.push(this.formatBytes(totalBytes));
+        }
+        if (rawState === 'downloading' && speedText) {
+            infoParts.push(speedText);
+        }
+        const connection = status.connection_type || status.connectionType;
+        if (connection) infoParts.push(`Conn: ${connection}`);
+        if (rawState === 'completed' && status.start_time && status.end_time) {
+            const duration = this.formatDuration(status.start_time, status.end_time);
+            if (duration && duration !== 'N/A') infoParts.push(`Time: ${duration}`);
+        }
+        text.textContent = [friendlyStatus, ...infoParts].filter(Boolean).join(' • ');
+        if (!text.textContent) text.textContent = friendlyStatus;
+
+        if (status.error) {
+            const errText = String(status.error);
+            error.textContent = errText.length > 200 ? `${errText.slice(0, 200)}…` : errText;
+            error.hidden = false;
+            error.title = errText;
+        } else {
+            error.textContent = '';
+            error.hidden = true;
+            error.removeAttribute('title');
+        }
+
+        actions.innerHTML = '';
+        if (downloadId !== undefined && downloadId !== null) {
+            const idStr = String(downloadId);
+            if (rawState === 'queued' || rawState === 'downloading' || rawState === 'starting') {
+                actions.appendChild(this.createStatusActionButton('cancel', idStr));
+            }
+            if (rawState === 'failed' || rawState === 'cancelled') {
+                actions.appendChild(this.createStatusActionButton('retry', idStr));
+            }
+            if (rawState === 'completed') {
+                actions.appendChild(this.createStatusActionButton('open', idStr));
+            }
+        }
+        actions.classList.toggle('hidden', actions.childElementCount === 0);
+
+        footer.classList.remove('hidden');
+        footer.setAttribute('aria-hidden', 'false');
+
+        this.updateCardBadge(card, rawState);
+        if (status.path) {
+            this.updateCardLocalPath(card, status.path);
+        }
+
+        this.ensureFontAwesome();
+    }
+
+    getCardStatusElements(card) {
+        if (!card) return null;
+        let footer = card.querySelector('.civi-status-footer');
+        if (!footer) {
+            footer = document.createElement('div');
+            footer.className = 'civi-status-footer hidden';
+            footer.innerHTML = `
+                <div class="civi-status-line">
+                  <div class="civi-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">0%</div>
+                  <div class="civi-status-text"></div>
+                </div>
+                <div class="civi-status-error" hidden></div>
+                <div class="civi-status-actions"></div>
+            `;
+            card.appendChild(footer);
+        }
+
+        let progress = footer.querySelector('.civi-progress');
+        if (!progress) {
+            progress = document.createElement('div');
+            progress.className = 'civi-progress';
+            progress.setAttribute('role', 'progressbar');
+            progress.setAttribute('aria-valuemin', '0');
+            progress.setAttribute('aria-valuemax', '100');
+            progress.setAttribute('aria-valuenow', '0');
+            progress.textContent = '0%';
+            const line = footer.querySelector('.civi-status-line');
+            if (line) {
+                line.insertBefore(progress, line.firstChild);
+            } else {
+                footer.insertBefore(progress, footer.firstChild);
+            }
+        }
+
+        let text = footer.querySelector('.civi-status-text');
+        if (!text) {
+            text = document.createElement('div');
+            text.className = 'civi-status-text';
+            const line = footer.querySelector('.civi-status-line');
+            if (line) line.appendChild(text);
+            else footer.appendChild(text);
+        }
+
+        let error = footer.querySelector('.civi-status-error');
+        if (!error) {
+            error = document.createElement('div');
+            error.className = 'civi-status-error';
+            error.hidden = true;
+            footer.appendChild(error);
+        }
+
+        let actions = footer.querySelector('.civi-status-actions');
+        if (!actions) {
+            actions = document.createElement('div');
+            actions.className = 'civi-status-actions';
+            footer.appendChild(actions);
+        }
+
+        return { footer, progress, text, error, actions };
+    }
+
+    createStatusActionButton(type, downloadId) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.id = downloadId;
+        button.className = `civi-btn civi-status-action civi-status-action-${type}`;
+
+        if (type === 'cancel') {
+            button.innerHTML = '<i class="fas fa-times"></i> Cancel';
+            button.title = 'Cancel download';
+            button.setAttribute('aria-label', 'Cancel download');
+        } else if (type === 'retry') {
+            button.innerHTML = '<i class="fas fa-redo"></i> Retry';
+            button.title = 'Retry download';
+            button.setAttribute('aria-label', 'Retry download');
+        } else if (type === 'open') {
+            button.innerHTML = '<i class="fas fa-folder-open"></i> Open';
+            button.title = 'Open containing folder';
+            button.setAttribute('aria-label', 'Open containing folder');
+        }
+
+        return button;
+    }
+
+    updateCardBadge(card, state) {
+        const badge = card?.querySelector('.civi-queued-badge');
+        if (!badge) return;
+        const labelMap = {
+            queued: 'Queued',
+            starting: 'Starting',
+            downloading: 'Downloading',
+            completed: 'Done',
+            failed: 'Failed',
+            cancelled: 'Cancelled',
+        };
+        const label = labelMap[state] || (state ? state.charAt(0).toUpperCase() + state.slice(1) : '');
+        badge.textContent = label;
+        badge.classList.toggle('state-success', state === 'completed');
+        badge.classList.toggle('state-error', state === 'failed' || state === 'cancelled');
+        badge.classList.toggle('state-active', state === 'downloading' || state === 'starting');
+    }
+
+    updateCardLocalPath(card, path) {
+        if (!card) return;
+        const pathEl = card.querySelector('.civi-local-path');
+        if (!pathEl) return;
+        const text = Array.isArray(path) ? path[0] : path;
+        if (!text) return;
+        pathEl.textContent = text;
+        pathEl.classList.add('civi-clickable-path');
+        pathEl.title = 'Open containing folder';
+        if (card.dataset) card.dataset.localPath = text;
     }
 
     async loadLibraryItems(showLoading = false) {
@@ -403,11 +667,13 @@ export class CivitaiDownloaderUI {
     }
 
     // --- Rendering (delegated to external renderers) ---
-    renderDownloadList = (items, container, emptyMessage) => renderDownloadList(this, items, container, emptyMessage);
     renderSearchResults = (items) => {
         if (!this.searchResultsContainer) return;
         const mapped = Array.isArray(items) ? items.map((item) => this.transformSearchHit(item)).filter(Boolean) : [];
         renderSearchCards(this.searchResultsContainer, mapped);
+        if (typeof this.updateCardStatuses === 'function') {
+            this.updateCardStatuses(this.statusData);
+        }
     };
     renderLibraryList = (items) => renderLibraryList(this, items);
 
@@ -576,8 +842,7 @@ export class CivitaiDownloaderUI {
     startStatusUpdates = () => startStatusUpdates(this);
     stopStatusUpdates = () => stopStatusUpdates(this);
     updateStatus = () => updateStatus(this);
-    handleCancelDownload = (downloadId) => handleCancelDownload(this, downloadId);
+    handleCancelDownload = (downloadId, button) => handleCancelDownload(this, downloadId, button);
     handleRetryDownload = (downloadId, button) => handleRetryDownload(this, downloadId, button);
     handleOpenPath = (downloadId, button) => handleOpenPath(this, downloadId, button);
-    handleClearHistory = () => handleClearHistory(this);
 }

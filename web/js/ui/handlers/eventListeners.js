@@ -70,47 +70,24 @@ export function setupEventListeners(ui) {
 
     // --- DYNAMIC CONTENT LISTENERS (Event Delegation) ---
 
-    // Status tab actions (Cancel/Retry/Open/Clear) and click-to-toggle blur on thumbs
-    ui.statusContent.addEventListener('click', (event) => {
-        const thumbContainer = event.target.closest('.civitai-thumbnail-container');
-        if (thumbContainer) {
-            const nsfwLevel = Number(thumbContainer.dataset.nsfwLevel ?? thumbContainer.getAttribute('data-nsfw-level'));
-            const threshold = Number(ui.settings?.nsfwBlurMinLevel ?? 4);
-            const enabled = ui.settings?.hideMatureInSearch === true;
-            if (enabled && Number.isFinite(nsfwLevel) && nsfwLevel >= threshold) {
-                if (thumbContainer.classList.contains('blurred')) {
-                    thumbContainer.classList.remove('blurred');
-                    const overlay = thumbContainer.querySelector('.civitai-nsfw-overlay');
-                    if (overlay) overlay.remove();
-                } else {
-                    thumbContainer.classList.add('blurred');
-                    if (!thumbContainer.querySelector('.civitai-nsfw-overlay')) {
-                        const ov = document.createElement('div');
-                        ov.className = 'civitai-nsfw-overlay';
-                        ov.title = 'R-rated: click to reveal';
-                        ov.textContent = 'R';
-                        thumbContainer.appendChild(ov);
-                    }
-                }
-                return; // consume
-            }
-        }
-
-        const button = event.target.closest('button');
-        if (!button) return;
-
-        const downloadId = button.dataset.id;
-        if (downloadId) {
-            if (button.classList.contains('civitai-cancel-button')) ui.handleCancelDownload(downloadId);
-            else if (button.classList.contains('civitai-retry-button')) ui.handleRetryDownload(downloadId, button);
-            else if (button.classList.contains('civitai-openpath-button')) ui.handleOpenPath(downloadId, button);
-        } else if (button.id === 'civitai-clear-history-button') {
-            ui.confirmClearModal.style.display = 'flex';
-        }
-    });
-
-    // Search results actions, including click-to-toggle blur
+    // Search results actions, including click-to-toggle blur and inline download controls
     ui.searchResultsContainer.addEventListener('click', (event) => {
+        const statusButton = event.target.closest('.civi-status-action');
+        if (statusButton) {
+            const downloadId = statusButton.dataset.id;
+            if (downloadId) {
+                if (statusButton.classList.contains('civi-status-action-cancel')) {
+                    ui.handleCancelDownload(downloadId, statusButton);
+                } else if (statusButton.classList.contains('civi-status-action-retry')) {
+                    ui.handleRetryDownload(downloadId, statusButton);
+                } else if (statusButton.classList.contains('civi-status-action-open')) {
+                    ui.handleOpenPath(downloadId, statusButton);
+                }
+            }
+            event.preventDefault();
+            return;
+        }
+
         if (ui.settings?.mergedSearchDownloadUI) {
             return;
         }
@@ -161,17 +138,6 @@ export function setupEventListeners(ui) {
                 ui.searchPagination.currentPage = page;
                 ui.handleSearchSubmit();
             }
-        }
-    });
-
-    // Confirmation Modal
-    ui.confirmClearYesButton.addEventListener('click', () => ui.handleClearHistory());
-    ui.confirmClearNoButton.addEventListener('click', () => {
-        ui.confirmClearModal.style.display = 'none';
-    });
-    ui.confirmClearModal.addEventListener('click', (event) => {
-        if (event.target === ui.confirmClearModal) {
-            ui.confirmClearModal.style.display = 'none';
         }
     });
 }

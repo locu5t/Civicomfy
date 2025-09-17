@@ -25,44 +25,48 @@ export async function updateStatus(ui) {
             throw new Error("Invalid status data structure received from server.");
         }
 
-        const oldStateString = JSON.stringify(ui.statusData);
-        const newStateString = JSON.stringify(newStatusData);
+        ui.statusData = newStatusData;
 
-        // Cache new state if it differs
-        if (oldStateString !== newStateString) {
-            ui.statusData = newStatusData;
+        const activeCount =
+            (Array.isArray(ui.statusData.active) ? ui.statusData.active.length : 0) +
+            (Array.isArray(ui.statusData.queue) ? ui.statusData.queue.length : 0);
+
+        if (ui.downloadIndicator) {
+            if (activeCount > 0) {
+                ui.downloadIndicator.textContent = ` (${activeCount})`;
+                ui.downloadIndicator.style.display = '';
+                ui.downloadIndicator.setAttribute('aria-label', `${activeCount} active downloads`);
+            } else {
+                ui.downloadIndicator.textContent = '';
+                ui.downloadIndicator.style.display = '';
+                ui.downloadIndicator.removeAttribute('aria-label');
+            }
         }
 
-        // Always keep counters in sync
-        const activeCount = ui.statusData.active.length + ui.statusData.queue.length;
-        ui.activeCountSpan.textContent = activeCount;
-        ui.statusIndicator.style.display = activeCount > 0 ? 'inline' : 'none';
+        if (typeof ui.updateCardStatuses === 'function') {
+            ui.updateCardStatuses(newStatusData);
+        }
 
-        // Always render when Status tab is active, even if data hasn't changed
-        if (ui.activeTab === 'status') {
-            ui.renderDownloadList(ui.statusData.active, ui.activeListContainer, 'No active downloads.');
-            ui.renderDownloadList(ui.statusData.queue, ui.queuedListContainer, 'Download queue is empty.');
-            ui.renderDownloadList(ui.statusData.history, ui.historyListContainer, 'No download history yet.');
-        } else if (ui.activeTab === 'library') {
+        if (ui.activeTab === 'library') {
             ui.loadLibraryItems(false);
         }
     } catch (error) {
         console.error("[Civicomfy] Failed to update status:", error);
-        if (ui.activeTab === 'status') {
-            const errorHtml = `<p style="color: var(--error-text, #ff6b6b);">${error.details || error.message}</p>`;
-            if (ui.activeListContainer) ui.activeListContainer.innerHTML = errorHtml;
-            if (ui.queuedListContainer) ui.queuedListContainer.innerHTML = '';
-            if (ui.historyListContainer) ui.historyListContainer.innerHTML = '';
+        if (ui.downloadIndicator) {
+            ui.downloadIndicator.textContent = ' (!)';
+            ui.downloadIndicator.style.display = '';
+            ui.downloadIndicator.setAttribute('aria-label', 'Download status unavailable');
         }
     }
 }
 
-export async function handleCancelDownload(ui, downloadId) {
-    const button = ui.modal.querySelector(`.civitai-cancel-button[data-id="${downloadId}"]`);
-    if (button) {
-        button.disabled = true;
-        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-        button.title = "Cancelling...";
+export async function handleCancelDownload(ui, downloadId, button) {
+    const targetButton = button || ui.modal.querySelector(`.civitai-cancel-button[data-id="${downloadId}"]`);
+    const originalContent = targetButton?.innerHTML;
+    if (targetButton) {
+        targetButton.disabled = true;
+        targetButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        targetButton.title = "Cancelling...";
     }
     try {
         const result = await CivitaiDownloaderAPI.cancelDownload(downloadId);
@@ -72,15 +76,18 @@ export async function handleCancelDownload(ui, downloadId) {
         const message = `Cancel failed: ${error.details || error.message}`;
         console.error("Cancel Download Error:", error);
         ui.showToast(message, 'error');
-        if (button) {
-            button.disabled = false;
-            button.innerHTML = '<i class="fas fa-times"></i>';
-            button.title = "Cancel Download";
+    } finally {
+        if (targetButton) {
+            targetButton.disabled = false;
+            targetButton.innerHTML = originalContent || '<i class="fas fa-times"></i>';
+            targetButton.title = "Cancel Download";
         }
     }
 }
 
 export async function handleRetryDownload(ui, downloadId, button) {
+    const originalContent = button.innerHTML;
+    const originalTitle = button.title;
     button.disabled = true;
     button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     button.title = "Retrying...";
@@ -88,21 +95,18 @@ export async function handleRetryDownload(ui, downloadId, button) {
         const result = await CivitaiDownloaderAPI.retryDownload(downloadId);
         if (result.success) {
             ui.showToast(result.message || `Retry queued successfully!`, 'success');
-            if (ui.settings.autoOpenStatusTab) ui.switchTab('status');
-            else ui.updateStatus();
+            ui.updateStatus();
         } else {
             ui.showToast(`Retry failed: ${result.details || result.error}`, 'error', 5000);
-            button.disabled = false;
-            button.innerHTML = '<i class="fas fa-redo"></i>';
-            button.title = "Retry Download";
         }
     } catch (error) {
         const message = `Retry failed: ${error.details || error.message}`;
         console.error("Retry Download UI Error:", error);
         ui.showToast(message, 'error', 5000);
+    } finally {
         button.disabled = false;
-        button.innerHTML = '<i class="fas fa-redo"></i>';
-        button.title = "Retry Download";
+        button.innerHTML = originalContent || '<i class="fas fa-redo"></i>';
+        button.title = originalTitle || "Retry Download";
     }
 }
 
@@ -129,28 +133,3 @@ export async function handleOpenPath(ui, downloadId, button) {
     }
 }
 
-export async function handleClearHistory(ui) {
-    ui.confirmClearYesButton.disabled = true;
-    ui.confirmClearNoButton.disabled = true;
-    ui.confirmClearYesButton.textContent = 'Clearing...';
-
-    try {
-        const result = await CivitaiDownloaderAPI.clearHistory();
-        if (result.success) {
-            ui.showToast(result.message || 'History cleared successfully!', 'success');
-            ui.statusData.history = [];
-            ui.renderDownloadList(ui.statusData.history, ui.historyListContainer, 'No download history yet.');
-            ui.confirmClearModal.style.display = 'none';
-        } else {
-            ui.showToast(`Clear history failed: ${result.details || result.error}`, 'error', 5000);
-        }
-    } catch (error) {
-        const message = `Clear history failed: ${error.details || error.message}`;
-        console.error("Clear History UI Error:", error);
-        ui.showToast(message, 'error', 5000);
-    } finally {
-        ui.confirmClearYesButton.disabled = false;
-        ui.confirmClearNoButton.disabled = false;
-        ui.confirmClearYesButton.textContent = 'Confirm Clear';
-    }
-}

@@ -7,7 +7,6 @@ export function getDefaultSettings() {
         apiKey: '',
         numConnections: 1,
         defaultModelType: 'checkpoint',
-        autoOpenStatusTab: true,
         searchResultLimit: 20,
         hideMatureInSearch: true,
         nsfwBlurMinLevel: 4, // Blur thumbnails with nsfwLevel >= this value
@@ -57,9 +56,6 @@ export function applySettings(ui) {
     if (ui.settingsDefaultTypeSelect) {
         ui.settingsDefaultTypeSelect.value = ui.settings.defaultModelType || 'checkpoint';
     }
-    if (ui.settingsAutoOpenCheckbox) {
-        ui.settingsAutoOpenCheckbox.checked = ui.settings.autoOpenStatusTab === true;
-    }
     if (ui.settingsHideMatureCheckbox) {
         ui.settingsHideMatureCheckbox.checked = ui.settings.hideMatureInSearch === true;
     }
@@ -81,7 +77,6 @@ export function handleSettingsSave(ui) {
     const apiKey = ui.settingsApiKeyInput.value.trim();
     const numConnections = parseInt(ui.settingsConnectionsInput.value, 10);
     const defaultModelType = ui.settingsDefaultTypeSelect.value;
-    const autoOpenStatusTab = ui.settingsAutoOpenCheckbox.checked;
     const hideMatureInSearch = ui.settingsHideMatureCheckbox.checked;
     const mergedSearchDownloadUI = ui.settingsMergedUiCheckbox?.checked === true;
     const nsfwBlurMinLevel = Number(ui.settingsNsfwThresholdInput.value);
@@ -98,7 +93,6 @@ export function handleSettingsSave(ui) {
     ui.settings.apiKey = apiKey;
     ui.settings.numConnections = numConnections;
     ui.settings.defaultModelType = defaultModelType;
-    ui.settings.autoOpenStatusTab = autoOpenStatusTab;
     ui.settings.hideMatureInSearch = hideMatureInSearch;
     ui.settings.nsfwBlurMinLevel = (Number.isFinite(nsfwBlurMinLevel) && nsfwBlurMinLevel >= 0) ? Math.min(128, Math.round(nsfwBlurMinLevel)) : 4;
     ui.settings.mergedSearchDownloadUI = mergedSearchDownloadUI;

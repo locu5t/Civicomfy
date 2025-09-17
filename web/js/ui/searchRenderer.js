@@ -96,6 +96,14 @@ export function createCardElement(model) {
         </div>
       </div>
     </div>
+    <div class="civi-status-footer hidden" aria-hidden="true">
+      <div class="civi-status-line">
+        <div class="civi-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">0%</div>
+        <div class="civi-status-text"></div>
+      </div>
+      <div class="civi-status-error" hidden></div>
+      <div class="civi-status-actions"></div>
+    </div>
   `;
 
   const versionSelect = card.querySelector('.civi-version-select');
