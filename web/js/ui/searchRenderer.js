@@ -24,6 +24,7 @@ export function createCardElement(model) {
   card.className = 'civi-card';
   card.dataset.modelId = model.modelId;
   card.dataset.modelType = model.modelType || '';
+  card.dataset.baseModel = model.baseModel || '';
   card.dataset.modelName = model.title || '';
   card.dataset.versionId = model.versionId || '';
   card.dataset.versionName = model.versionName || '';
