@@ -830,6 +830,44 @@
     gap: 12px;
     align-items: start;
 }
+
+.civi-drawer-targets {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 0.9rem;
+}
+
+.civi-drawer-targets label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.civi-drawer-targets input,
+.civi-drawer-targets select {
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(0, 0, 0, 0.35);
+    color: inherit;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.civi-folder-fields {
+    display: grid;
+    gap: 6px;
+}
+
+.civi-path-preview {
+    font-size: 0.8rem;
+    color: rgba(255, 255, 255, 0.75);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    padding: 6px 8px;
+    word-break: break-all;
+}
 .civi-files-list {
     max-height: 180px;
     overflow: auto;
