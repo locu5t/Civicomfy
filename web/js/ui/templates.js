@@ -149,6 +149,10 @@ export function modalTemplate(settings = {}) {
                   <input type="checkbox" id="civitai-settings-hide-mature" class="civitai-checkbox" ${settings.hideMatureInSearch ? 'checked' : ''}>
                   <label for="civitai-settings-hide-mature">Hide R-rated (Mature) images in search (click to reveal)</label>
                 </div>
+                <div class="civitai-form-group inline">
+                  <input type="checkbox" id="civitai-settings-merged-ui" class="civitai-checkbox" ${settings.mergedSearchDownloadUI ? 'checked' : ''}>
+                  <label for="civitai-settings-merged-ui">Use merged Search & Download layout (beta)</label>
+                </div>
                 <div class="civitai-form-group">
                   <label for="civitai-settings-nsfw-threshold">NSFW Blur Threshold (nsfwLevel)</label>
                   <input type="number" id="civitai-settings-nsfw-threshold" class="civitai-input" value="${Number.isFinite(settings.nsfwBlurMinLevel) ? settings.nsfwBlurMinLevel : 4}" min="0" max="128" step="1">

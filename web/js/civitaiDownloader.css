@@ -729,3 +729,171 @@
     right: 5px;
     /* ... */
 }
+
+/* Card + drawer styles for merged UI */
+.civi-card {
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 10px;
+    margin: 8px;
+    border-radius: 8px;
+    background: var(--civi-card-bg, rgba(0, 0, 0, 0.35));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: box-shadow 160ms ease;
+}
+.civi-card:hover {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+.civi-card .civi-card-top {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+.civi-thumb img {
+    width: 96px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: 6px;
+}
+.civi-meta {
+    flex: 1;
+    min-width: 0;
+}
+.civi-title {
+    margin: 0 0 4px 0;
+    font-size: 1rem;
+}
+.civi-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.civi-version-select {
+    min-width: 160px;
+}
+.civi-btn {
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: var(--civi-btn-bg, #2b6);
+    border: none;
+    cursor: pointer;
+}
+.civi-btn-quick-download {
+    background: var(--civi-primary, #1976d2);
+    color: #fff;
+}
+
+.civi-local-meta {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.85rem;
+    color: #cfd8dc;
+}
+.civi-local-path {
+    max-width: 60%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+}
+.civi-triggers {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.civi-trigger-pill {
+    background: rgba(255, 255, 255, 0.06);
+    border: none;
+    padding: 3px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+    color: inherit;
+}
+
+.civi-download-drawer {
+    border-top: 1px dashed rgba(255, 255, 255, 0.1);
+    padding-top: 10px;
+    margin-top: 8px;
+}
+.civi-download-drawer.hidden {
+    display: none;
+}
+.civi-drawer-inner {
+    display: grid;
+    grid-template-columns: minmax(220px, 1fr) 260px;
+    gap: 12px;
+    align-items: start;
+}
+.civi-files-list {
+    max-height: 180px;
+    overflow: auto;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.civi-file-row {
+    font-size: 0.85rem;
+}
+.civi-file-unavailable {
+    opacity: 0.6;
+    margin-left: 6px;
+}
+.civi-drawer-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.civi-progress {
+    height: 22px;
+    border-radius: 6px;
+    background: linear-gradient(90deg, rgba(0, 150, 136, 0.36) var(--civi-progress, 0%), rgba(255, 255, 255, 0.04) var(--civi-progress, 0%));
+    color: #fff;
+    padding: 4px 8px;
+    font-size: 0.85rem;
+    min-width: 140px;
+}
+.civi-progress.failed {
+    background: linear-gradient(90deg, rgba(198, 40, 40, 0.55) var(--civi-progress, 0%), rgba(255, 255, 255, 0.04) var(--civi-progress, 0%));
+}
+
+.civi-queued-badge {
+    display: inline-block;
+    background: rgba(0, 0, 0, 0.45);
+    padding: 4px 8px;
+    border-radius: 10px;
+    margin-left: 8px;
+    font-size: 0.8rem;
+    color: #fff;
+}
+
+.civi-preview-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.civi-preview-meta {
+    font-size: 0.85rem;
+    opacity: 0.8;
+    margin-bottom: 6px;
+}
+.civi-preview-desc {
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+.civi-preview-desc.subtle {
+    opacity: 0.7;
+    margin-top: 6px;
+}
+
+.civi-card.drawer-open {
+    border-color: rgba(21, 101, 192, 0.55);
+    box-shadow: 0 0 0 1px rgba(21, 101, 192, 0.35);
+}

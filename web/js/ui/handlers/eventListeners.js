@@ -153,6 +153,9 @@ export function setupEventListeners(ui) {
 
     // Search results actions, including click-to-toggle blur
     ui.searchResultsContainer.addEventListener('click', (event) => {
+        if (ui.settings?.mergedSearchDownloadUI) {
+            return;
+        }
         const thumbContainer = event.target.closest('.civitai-thumbnail-container');
         if (thumbContainer) {
             const nsfwLevel = Number(thumbContainer.dataset.nsfwLevel ?? thumbContainer.getAttribute('data-nsfw-level'));

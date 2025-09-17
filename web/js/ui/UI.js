@@ -1,10 +1,10 @@
 import { Feedback } from "./feedback.js";
 import { setupEventListeners } from "./handlers/eventListeners.js";
 import { handleDownloadSubmit, fetchAndDisplayDownloadPreview, debounceFetchDownloadPreview } from "./handlers/downloadHandler.js";
-import { handleSearchSubmit } from "./handlers/searchHandler.js";
+import { handleSearchSubmit, initSearchHandlers } from "./handlers/searchHandler.js";
 import { handleSettingsSave, loadAndApplySettings, loadSettingsFromCookie, saveSettingsToCookie, applySettings, getDefaultSettings } from "./handlers/settingsHandler.js";
 import { startStatusUpdates, stopStatusUpdates, updateStatus, handleCancelDownload, handleRetryDownload, handleOpenPath, handleClearHistory } from "./handlers/statusHandler.js";
-import { renderSearchResults } from "./searchRenderer.js";
+import { renderSearchResults as renderSearchCards } from "./searchRenderer.js";
 import { renderDownloadList } from "./statusRenderer.js";
 import { renderDownloadPreview } from "./previewRenderer.js";
 import { modalTemplate } from "./templates.js";
@@ -32,6 +32,7 @@ export class CivitaiDownloaderUI {
         this.feedback = new Feedback(this.modal.querySelector('#civitai-toast'));
         // Ensure icon stylesheet is loaded so buttons render icons immediately
         this.ensureFontAwesome();
+        this.initializeSearchHandlers();
     }
 
     // --- Core UI Methods ---
@@ -90,6 +91,7 @@ export class CivitaiDownloaderUI {
         this.settingsDefaultTypeSelect = this.modal.querySelector('#civitai-settings-default-type');
         this.settingsAutoOpenCheckbox = this.modal.querySelector('#civitai-settings-auto-open-status');
         this.settingsHideMatureCheckbox = this.modal.querySelector('#civitai-settings-hide-mature');
+        this.settingsMergedUiCheckbox = this.modal.querySelector('#civitai-settings-merged-ui');
         this.settingsNsfwThresholdInput = this.modal.querySelector('#civitai-settings-nsfw-threshold');
         this.settingsSaveButton = this.modal.querySelector('#civitai-settings-save');
 
@@ -276,11 +278,66 @@ export class CivitaiDownloaderUI {
         this.feedback?.ensureFontAwesome();
     }
 
+    initializeSearchHandlers() {
+        if (!this.searchResultsContainer) return;
+        initSearchHandlers(this.searchResultsContainer, {
+            api: CivitaiDownloaderAPI,
+            toast: (message, type = 'info', duration = 3000) => this.showToast(message, type, duration),
+            getSettings: () => this.settings,
+            getModelTypeOptions: () => {
+                const entries = Object.entries(this.modelTypes || {});
+                if (entries.length === 0) {
+                    const fallback = this.settings?.defaultModelType || 'checkpoint';
+                    return [{ value: fallback, label: this.modelTypes?.[fallback] || fallback }];
+                }
+                return entries.map(([value, label]) => ({ value, label }));
+            },
+            inferModelType: (type) => this.inferFolderFromCivitaiType(type),
+            onQueueSuccess: () => {
+                if (this.settings.autoOpenStatusTab) {
+                    this.switchTab('status');
+                } else {
+                    this.updateStatus();
+                }
+            },
+            onRequireApiKey: () => this.switchTab('settings'),
+        });
+    }
+
+    updateMergedUIState() {
+        const enabled = this.settings?.mergedSearchDownloadUI === true;
+        const downloadTab = this.tabs?.['download'];
+        const downloadContent = this.tabContents?.['download'];
+        if (downloadTab) {
+            downloadTab.style.display = enabled ? 'none' : '';
+            if (enabled) {
+                downloadTab.classList.remove('active');
+                downloadTab.setAttribute('aria-hidden', 'true');
+            } else {
+                downloadTab.removeAttribute('aria-hidden');
+            }
+        }
+        if (downloadContent) {
+            downloadContent.style.display = enabled ? 'none' : '';
+            if (enabled) downloadContent.classList.remove('active');
+        }
+        if (enabled && this.activeTab === 'download') {
+            this.switchTab('search');
+        }
+        if (this.modal) {
+            this.modal.classList.toggle('merged-ui-enabled', enabled);
+        }
+    }
+
     // --- Rendering (delegated to external renderers) ---
     renderDownloadList = (items, container, emptyMessage) => renderDownloadList(this, items, container, emptyMessage);
-    renderSearchResults = (items) => renderSearchResults(this, items);
+    renderSearchResults = (items) => {
+        if (!this.searchResultsContainer) return;
+        const mapped = Array.isArray(items) ? items.map((item) => this.transformSearchHit(item)).filter(Boolean) : [];
+        renderSearchCards(this.searchResultsContainer, mapped);
+    };
     renderDownloadPreview = (data) => renderDownloadPreview(this, data);
-    
+
     // --- Auto-select model type based on Civitai model type ---
     inferFolderFromCivitaiType(civitaiType) {
         if (!civitaiType || typeof civitaiType !== 'string') return null;
@@ -350,6 +407,40 @@ export class CivitaiDownloaderUI {
         if (contains) return contains;
 
         return null;
+    }
+
+    transformSearchHit(hit) {
+        if (!hit || typeof hit !== 'object') return null;
+        const modelId = hit.id || hit.modelId;
+        if (!modelId) return null;
+        const versions = Array.isArray(hit.versions)
+            ? hit.versions
+            : (Array.isArray(hit.modelVersions) ? hit.modelVersions : []);
+        const primary = hit.version || versions[0] || {};
+        const fallbackBase = versions.find(v => v && v.baseModel)?.baseModel;
+        const metrics = hit.metrics || hit.stats || {};
+        const downloads = metrics.downloadCount ?? metrics.downloads ?? hit.downloads ?? primary.downloadCount;
+        const likes = metrics.thumbsUpCount ?? metrics.likes ?? hit.likes;
+        const mappedVersions = versions.map(v => ({
+            id: v?.id,
+            name: v?.name,
+            baseModel: v?.baseModel,
+        })).filter(v => v.id);
+
+        return {
+            modelId,
+            versionId: primary.id,
+            versionName: primary.name,
+            title: hit.name || primary.name || 'Untitled Model',
+            author: hit.user?.username || hit.creator || 'Unknown',
+            thumbUrl: hit.thumbnailUrl || hit.previewImage || primary.thumbnailUrl || '',
+            downloads,
+            likes,
+            baseModel: primary.baseModel || fallbackBase || '',
+            modelType: hit.type || primary.type || '',
+            versions: mappedVersions,
+            raw: hit,
+        };
     }
 
     async autoSelectModelTypeFromCivitai(civitaiType) {

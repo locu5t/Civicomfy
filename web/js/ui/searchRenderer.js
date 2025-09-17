@@ -1,189 +1,285 @@
-// Rendering of search results list
-// Usage: renderSearchResults(uiInstance, itemsArray)
+// web/js/ui/searchRenderer.js
+// Rendering helpers for search result cards and inline download drawer.
 
-const PLACEHOLDER_IMAGE_URL = `/extensions/Civicomfy/images/placeholder.jpeg`;
-
-export function renderSearchResults(ui, items) {
-  ui.feedback?.ensureFontAwesome();
-
-  if (!items || items.length === 0) {
-    const queryUsed = ui.searchQueryInput && ui.searchQueryInput.value.trim();
-    const typeFilterUsed = ui.searchTypeSelect && ui.searchTypeSelect.value !== 'any';
-    const baseModelFilterUsed = ui.searchBaseModelSelect && ui.searchBaseModelSelect.value !== 'any';
-    const message = (queryUsed || typeFilterUsed || baseModelFilterUsed)
-      ? 'No models found matching your criteria.'
-      : 'Enter a query or select filters and click Search.';
-    ui.searchResultsContainer.innerHTML = `<p>${message}</p>`;
+export function renderSearchResults(containerEl, results = []) {
+  if (!containerEl) return;
+  containerEl.innerHTML = '';
+  if (!Array.isArray(results) || results.length === 0) {
+    const empty = document.createElement('p');
+    empty.textContent = 'No results yet. Try adjusting your filters.';
+    containerEl.appendChild(empty);
     return;
   }
-
-  const placeholder = PLACEHOLDER_IMAGE_URL;
-  const onErrorScript = `this.onerror=null; this.src='${placeholder}'; this.style.backgroundColor='#444';`;
-  const fragment = document.createDocumentFragment();
-
-  items.forEach(hit => {
-    const modelId = hit.id;
-    if (!modelId) return;
-
-    const creator = hit.user?.username || 'Unknown Creator';
-    const modelName = hit.name || 'Untitled Model';
-    const modelTypeApi = hit.type || 'other';
-    console.log('Model type for badge:', modelTypeApi);
-    const stats = hit.metrics || {};
-    const tags = hit.tags?.map(t => t.name) || [];
-
-    const thumbnailUrl = hit.thumbnailUrl || placeholder;
-    const firstImage = Array.isArray(hit.images) && hit.images.length > 0 ? hit.images[0] : null;
-    const thumbnailType = firstImage?.type;
-    const nsfwLevel = Number(firstImage?.nsfwLevel ?? hit.nsfwLevel ?? 0);
-    const blurMinLevel = Number(ui.settings?.nsfwBlurMinLevel ?? 4);
-    const shouldBlur = ui.settings?.hideMatureInSearch === true && nsfwLevel >= blurMinLevel;
-
-    const allVersions = hit.versions || [];
-    const primaryVersion = hit.version || (allVersions.length > 0 ? allVersions[0] : {});
-    const primaryVersionId = primaryVersion.id;
-    const primaryBaseModel = primaryVersion.baseModel || 'N/A';
-
-    const uniqueBaseModels = allVersions.length > 0
-      ? [...new Set(allVersions.map(v => v.baseModel).filter(Boolean))]
-      : (primaryBaseModel !== 'N/A' ? [primaryBaseModel] : []);
-    const baseModelsDisplay = uniqueBaseModels.length > 0 ? uniqueBaseModels.join(', ') : 'N/A';
-
-    const publishedAt = hit.publishedAt;
-    let lastUpdatedFormatted = 'N/A';
-    if (publishedAt) {
-      try {
-        const date = new Date(publishedAt);
-        lastUpdatedFormatted = date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-      } catch (_) {}
-    }
-
-    const listItem = document.createElement('div');
-    listItem.className = 'civitai-search-item';
-    listItem.dataset.modelId = modelId;
-
-    const MAX_VISIBLE_VERSIONS = 3;
-    let visibleVersions = [];
-    if (primaryVersionId) {
-      visibleVersions.push({ id: primaryVersionId, name: primaryVersion.name || 'Primary Version', baseModel: primaryBaseModel });
-    }
-    allVersions.forEach(v => {
-      if (v.id !== primaryVersionId && visibleVersions.length < MAX_VISIBLE_VERSIONS) visibleVersions.push(v);
-    });
-
-    let versionButtonsHtml = visibleVersions.map(version => {
-      const versionId = version.id;
-      const versionName = version.name || 'Unknown Version';
-      const baseModel = version.baseModel || 'N/A';
-      return `
-        <button class="civitai-button primary small civitai-search-download-button"
-                data-model-id="${modelId}"
-                data-version-id="${versionId || ''}"
-                data-model-type="${modelTypeApi || ''}"
-                ${!versionId ? 'disabled title="Version ID missing, cannot pre-fill"' : 'title="Pre-fill Download Tab"'} >
-          <span class="base-model-badge">${baseModel}</span> ${versionName} <i class="fas fa-download"></i>
-        </button>
-      `;
-    }).join('');
-
-    const hasMoreVersions = allVersions.length > visibleVersions.length;
-    const totalVersionCount = allVersions.length;
-    const moreButtonHtml = hasMoreVersions ? `
-      <button class="civitai-button secondary small show-all-versions-button"
-              data-model-id="${modelId}"
-              data-total-versions="${totalVersionCount}"
-              title="Show all ${totalVersionCount} versions">
-        All versions (${totalVersionCount}) <i class="fas fa-chevron-down"></i>
-      </button>
-    ` : '';
-
-    let allVersionsHtml = '';
-    if (hasMoreVersions) {
-      const hiddenVersions = allVersions.filter(v => !visibleVersions.some(vis => vis.id === v.id));
-      allVersionsHtml = `
-        <div class="all-versions-container" id="all-versions-${modelId}" style="display: none;">
-          ${hiddenVersions.map(version => {
-            const versionId = version.id;
-            const versionName = version.name || 'Unknown Version';
-            const baseModel = version.baseModel || 'N/A';
-            return `
-              <button class="civitai-button primary small civitai-search-download-button"
-                      data-model-id="${modelId}"
-                      data-version-id="${versionId || ''}"
-                      data-model-type="${modelTypeApi || ''}"
-                      ${!versionId ? 'disabled title="Version ID missing, cannot pre-fill"' : 'title="Pre-fill Download Tab"'} >
-                <span class="base-model-badge">${baseModel}</span> ${versionName} <i class="fas fa-download"></i>
-              </button>
-            `;
-          }).join('')}
-        </div>
-      `;
-    }
-
-    let thumbnailHtml = '';
-    const videoTitle = `Video preview for ${modelName}`;
-    const imageAlt = `${modelName} thumbnail`;
-    if (thumbnailUrl && typeof thumbnailUrl === 'string' && thumbnailType === 'video') {
-      thumbnailHtml = `
-        <video class="civitai-search-thumbnail" src="${thumbnailUrl}" autoplay loop muted playsinline
-               title="${videoTitle}"
-               onerror="console.error('Failed to load video preview:', this.src)">
-          Your browser does not support the video tag.
-        </video>
-      `;
-    } else {
-      const effective = thumbnailUrl || placeholder;
-      thumbnailHtml = `
-        <img src="${effective}" alt="${imageAlt}" class="civitai-search-thumbnail" loading="lazy" onerror="${onErrorScript}">
-      `;
-    }
-
-    const overlayHtml = shouldBlur ? `<div class="civitai-nsfw-overlay" title="R-rated: click to reveal">R</div>` : '';
-    const containerClasses = `civitai-thumbnail-container${shouldBlur ? ' blurred' : ''}`;
-
-    listItem.innerHTML = `
-      <div class="${containerClasses}" data-nsfw-level="${nsfwLevel ?? ''}">
-        ${thumbnailHtml}
-        ${overlayHtml}
-        <div class="civitai-type-badge" data-type="${modelTypeApi.toLowerCase()}">${modelTypeApi}</div>
-      </div>
-      <div class="civitai-search-info">
-        <h4>${modelName}</h4>
-        <div class="civitai-search-meta-info">
-          <span title="Creator: ${creator}"><i class="fas fa-user"></i> ${creator}</span>
-          <span title="Base Models: ${baseModelsDisplay}"><i class="fas fa-layer-group"></i> ${baseModelsDisplay}</span>
-          <span title="Published: ${lastUpdatedFormatted}"><i class="fas fa-calendar-alt"></i> ${lastUpdatedFormatted}</span>
-        </div>
-        <div class="civitai-search-stats" title="Stats: Downloads / Rating (Count) / Likes">
-          <span title="Downloads"><i class="fas fa-download"></i> ${stats.downloadCount?.toLocaleString() || 0}</span>
-          <span title="Thumbs"><i class="fas fa-thumbs-up"></i> ${stats.thumbsUpCount?.toLocaleString() || 0}</span>
-          <span title="Collected"><i class="fas fa-archive"></i> ${stats.collectedCount?.toLocaleString() || 0}</span>
-          <span title="Buzz"><i class="fas fa-bolt"></i> ${stats.tippedAmountCount?.toLocaleString() || 0}</span>
-        </div>
-        ${tags.length > 0 ? `
-        <div class="civitai-search-tags" title="${tags.join(', ')}">
-          ${tags.slice(0, 5).map(tag => `<span class="civitai-search-tag">${tag}</span>`).join('')}
-          ${tags.length > 5 ? `<span class="civitai-search-tag">...</span>` : ''}
-        </div>
-        ` : ''}
-      </div>
-      <div class="civitai-search-actions">
-        <a href="https://civitai.com/models/${modelId}${primaryVersionId ? '?modelVersionId='+primaryVersionId : ''}" 
-           target="_blank" rel="noopener noreferrer" class="civitai-button small" 
-           title="Open on Civitai website">
-          View <i class="fas fa-external-link-alt"></i>
-        </a>
-        <div class="version-buttons-container">
-          ${versionButtonsHtml}
-          ${moreButtonHtml}
-        </div>
-        ${allVersionsHtml}
-      </div>
-    `;
-
-    fragment.appendChild(listItem);
+  const frag = document.createDocumentFragment();
+  results.forEach(result => {
+    const card = createCardElement(result);
+    if (card) frag.appendChild(card);
   });
+  containerEl.appendChild(frag);
+}
 
-  ui.searchResultsContainer.innerHTML = '';
-  ui.searchResultsContainer.appendChild(fragment);
+export function createCardElement(model) {
+  if (!model || !model.modelId) return null;
+  const card = document.createElement('div');
+  card.className = 'civi-card';
+  card.dataset.modelId = model.modelId;
+  card.dataset.modelType = model.modelType || '';
+  card.dataset.modelName = model.title || '';
+  card.dataset.versionId = model.versionId || '';
+  card.dataset.versionName = model.versionName || '';
+  card.__civitaiVersions = Array.isArray(model.versions) ? model.versions : [];
+  if (model.raw) card.__civitaiRaw = model.raw;
+
+  const statsText = buildStatsText(model);
+
+  card.innerHTML = `
+    <div class="civi-card-top">
+      <div class="civi-thumb"><img src="${escapeHtml(model.thumbUrl || '')}" alt="${escapeHtml(model.title || '')}" loading="lazy"></div>
+      <div class="civi-meta">
+        <h4 class="civi-title">${escapeHtml(model.title || 'Untitled')}</h4>
+        <div class="civi-author">by ${escapeHtml(model.author || 'Unknown')}</div>
+        <div class="civi-stats">${statsText}</div>
+      </div>
+    </div>
+
+    <div class="civi-actions">
+      <select class="civi-version-select" aria-label="Select version"></select>
+      <button class="civi-btn civi-btn-quick-download" title="Quick download" aria-label="Quick download">Download</button>
+      <label class="civi-checkbox"><input type="checkbox" class="civi-card-select" /> Select</label>
+      <button class="civi-btn civi-btn-details" title="Full details" aria-label="Full details">Details</button>
+    </div>
+
+    <div class="civi-local-meta">
+      <div class="civi-local-path">Not downloaded</div>
+      <div class="civi-triggers"></div>
+    </div>
+
+    <div class="civi-download-drawer hidden" aria-hidden="true">
+      <div class="civi-drawer-inner">
+        <div class="civi-drawer-preview"></div>
+
+        <div class="civi-drawer-files">
+          <div class="civi-files-heading">Files</div>
+          <div class="civi-files-list"></div>
+        </div>
+
+        <div class="civi-drawer-targets">
+          <label>Target location:
+            <select class="civi-target-root"></select>
+          </label>
+          <label>Subfolder:
+            <input class="civi-subdir-input" placeholder="optional subfolder">
+          </label>
+          <label>Filename override:
+            <input class="civi-filename-input" placeholder="optional filename.safetensors">
+          </label>
+        </div>
+
+        <div class="civi-drawer-options">
+          <label><input type="checkbox" class="civi-force-checkbox"> Force redownload</label>
+          <label><input type="checkbox" class="civi-preview-checkbox" checked> Generate preview</label>
+        </div>
+
+        <div class="civi-drawer-actions">
+          <button class="civi-btn civi-btn-queue">Queue download</button>
+          <button class="civi-btn civi-btn-close">Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const versionSelect = card.querySelector('.civi-version-select');
+  populateVersionSelect(versionSelect, card.__civitaiVersions, model.versionId);
+
+  card.setAttribute('role', 'group');
+  card.setAttribute('aria-label', model.title || 'Model card');
+
+  return card;
+}
+
+function populateVersionSelect(selectEl, versions = [], selectedId) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+  const cleaned = Array.isArray(versions) ? versions.filter(v => v && (v.id || v.versionId)) : [];
+  if (cleaned.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = selectedId || '';
+    opt.textContent = 'Default';
+    selectEl.appendChild(opt);
+    return;
+  }
+  cleaned.forEach(version => {
+    const value = version.id || version.versionId;
+    if (!value) return;
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = version.name || `Version ${value}`;
+    if (String(value) === String(selectedId)) opt.selected = true;
+    selectEl.appendChild(opt);
+  });
+  if (selectedId && !Array.from(selectEl.options).some(o => String(o.value) === String(selectedId))) {
+    selectEl.value = String(cleaned[0].id || cleaned[0].versionId || '');
+  }
+}
+
+export function toggleDrawer(cardEl, show = true) {
+  if (!cardEl) return;
+  const drawer = cardEl.querySelector('.civi-download-drawer');
+  if (!drawer) return;
+  if (show) {
+    drawer.classList.remove('hidden');
+    drawer.setAttribute('aria-hidden', 'false');
+    cardEl.classList.add('drawer-open');
+  } else {
+    drawer.classList.add('hidden');
+    drawer.setAttribute('aria-hidden', 'true');
+    cardEl.classList.remove('drawer-open');
+  }
+}
+
+export function populateDrawerWithDetails(cardEl, details, modelTypeOptions = [], defaults = {}) {
+  if (!cardEl || !details) return;
+  const previewEl = cardEl.querySelector('.civi-drawer-preview');
+  if (previewEl) {
+    const modelTitle = details.model_name || details.name || '';
+    const versionName = details.version_name || details.versionName || '';
+    const desc = stripHtml(details.description_html || details.description || '');
+    const versionDesc = stripHtml(details.version_description_html || details.version_description || '');
+    previewEl.innerHTML = `
+      <div class="civi-preview-title">${escapeHtml(modelTitle)}</div>
+      <div class="civi-preview-meta">Version: ${escapeHtml(versionName)}</div>
+      <div class="civi-preview-desc">${escapeHtml((desc || '').slice(0, 400))}${desc && desc.length > 400 ? '…' : ''}</div>
+      <div class="civi-preview-desc subtle">${escapeHtml((versionDesc || '').slice(0, 200))}${versionDesc && versionDesc.length > 200 ? '…' : ''}</div>
+    `;
+  }
+
+  const filesList = cardEl.querySelector('.civi-files-list');
+  if (filesList) {
+    filesList.innerHTML = '';
+    const files = Array.isArray(details.files) ? details.files : [];
+    if (files.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'civi-file-row';
+      empty.textContent = 'No downloadable files exposed.';
+      filesList.appendChild(empty);
+    }
+    files.forEach(file => {
+      const fileId = file.id ?? file.file_id;
+      if (!fileId && fileId !== 0) return;
+      const sizeKb = Number(file.size_kb ?? file.sizeKB ?? 0);
+      const disabled = file.downloadable === false;
+      const radio = document.createElement('div');
+      radio.className = 'civi-file-row';
+      radio.innerHTML = `
+        <label>
+          <input type="radio" name="file-${cardEl.dataset.modelId}-${cardEl.dataset.versionId || ''}" class="civi-file-radio" value="${fileId}" ${file.primary || file.isPrimary ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+          ${escapeHtml(file.name || `File ${fileId}`)} (${formatBytes(sizeKb * 1024)}) ${disabled ? '<span class="civi-file-unavailable">(unavailable)</span>' : ''}
+        </label>
+      `;
+      filesList.appendChild(radio);
+    });
+    if (!filesList.querySelector('.civi-file-radio:checked')) {
+      const firstRadio = filesList.querySelector('.civi-file-radio');
+      if (firstRadio && !firstRadio.disabled) firstRadio.checked = true;
+    }
+  }
+
+  const rootSelect = cardEl.querySelector('.civi-target-root');
+  if (rootSelect) {
+    rootSelect.innerHTML = '';
+    const options = Array.isArray(modelTypeOptions) ? modelTypeOptions : [];
+    options.forEach(opt => {
+      if (!opt) return;
+      const option = document.createElement('option');
+      option.value = opt.value ?? opt.id ?? '';
+      option.textContent = opt.label ?? opt.name ?? opt.displayName ?? option.value;
+      rootSelect.appendChild(option);
+    });
+    if (defaults?.modelType && Array.from(rootSelect.options).some(o => o.value === defaults.modelType)) {
+      rootSelect.value = defaults.modelType;
+    } else if (rootSelect.options.length > 0 && !rootSelect.value) {
+      rootSelect.selectedIndex = 0;
+    }
+  }
+
+  const subdirInput = cardEl.querySelector('.civi-subdir-input');
+  if (subdirInput && defaults?.subdir !== undefined) {
+    subdirInput.value = defaults.subdir;
+  }
+
+  const filenameInput = cardEl.querySelector('.civi-filename-input');
+  if (filenameInput && defaults?.filename !== undefined) {
+    filenameInput.value = defaults.filename;
+  }
+}
+
+export function renderLocalInfo(cardEl, localInfo) {
+  if (!cardEl) return;
+  const pathEl = cardEl.querySelector('.civi-local-path');
+  const triggersEl = cardEl.querySelector('.civi-triggers');
+  if (pathEl) {
+    if (!localInfo || !Array.isArray(localInfo.local_paths) || localInfo.local_paths.length === 0) {
+      pathEl.textContent = 'Not downloaded';
+      pathEl.classList.remove('civi-clickable-path');
+      pathEl.removeAttribute('title');
+    } else {
+      pathEl.textContent = localInfo.local_paths[0];
+      pathEl.classList.add('civi-clickable-path');
+      pathEl.title = 'Open containing folder';
+    }
+  }
+  if (triggersEl) {
+    triggersEl.innerHTML = '';
+    const triggers = Array.isArray(localInfo?.triggers) ? localInfo.triggers : [];
+    triggers.forEach(trigger => {
+      const pill = document.createElement('button');
+      pill.type = 'button';
+      pill.className = 'civi-trigger-pill';
+      pill.textContent = trigger;
+      pill.title = 'Click to copy trigger';
+      triggersEl.appendChild(pill);
+    });
+  }
+}
+
+function buildStatsText(model) {
+  const parts = [];
+  if (model.downloads !== undefined && model.downloads !== null) {
+    parts.push(`${formatNumber(model.downloads)} downloads`);
+  }
+  if (model.likes !== undefined && model.likes !== null) {
+    parts.push(`${formatNumber(model.likes)} likes`);
+  }
+  if (model.baseModel) {
+    parts.push(`Base: ${model.baseModel}`);
+  }
+  return escapeHtml(parts.join(' • '));
+}
+
+function stripHtml(html = '') {
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  return tmp.textContent || tmp.innerText || '';
+}
+
+function escapeHtml(s = '') {
+  return String(s).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+}
+
+function formatBytes(bytes) {
+  if (!bytes || !Number.isFinite(bytes)) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${Math.round(value * 10) / 10} ${units[unitIndex]}`;
+}
+
+function formatNumber(n) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return '0';
+  return num.toLocaleString();
 }
