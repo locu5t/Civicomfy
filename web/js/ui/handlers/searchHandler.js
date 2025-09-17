@@ -38,22 +38,94 @@ function sanitizePathSegment(value, fallback = '') {
   return attempt(fallback);
 }
 
-function buildAutoSubdir(card, details) {
+function resolveBaseModel(details, card, versionId) {
+  const readBase = (source) => {
+    if (!source || typeof source !== 'object') return '';
+    return source.base_model || source.baseModel || '';
+  };
+
+  let base = readBase(details);
+
+  const versionKey = versionId != null ? String(versionId) : null;
+  if (!base && Array.isArray(details?.model_versions)) {
+    let candidate = null;
+    if (versionKey) {
+      candidate = details.model_versions.find((version) => {
+        if (!version) return false;
+        const vid = version.id ?? version.versionId ?? version.modelVersionId;
+        return vid && String(vid) === versionKey;
+      });
+    }
+    if (!candidate) {
+      candidate = details.model_versions.find((version) => readBase(version));
+    }
+    if (!candidate) {
+      candidate = details.model_versions[0];
+    }
+    base = readBase(candidate);
+  }
+
+  if (!base) {
+    base = readBase(details?.model_version) || readBase(details?.modelVersion);
+  }
+
+  if (!base && details?.model && typeof details.model === 'object') {
+    base = readBase(details.model);
+  }
+
+  if (!base && Array.isArray(details?.versions)) {
+    const candidate = details.versions.find((version) => readBase(version)) || details.versions[0];
+    base = readBase(candidate);
+  }
+
+  if (!base && card?.dataset?.baseModel) {
+    base = card.dataset.baseModel;
+  }
+
+  return base || '';
+}
+
+function buildAutoSubdir(card, details, preferredType, baseModelOverride) {
   if (!card) return '';
   const modelId = details?.model_id || details?.modelId || card.dataset.modelId;
   const versionId = details?.version_id || details?.versionId || card.dataset.versionId;
 
+  const preferredTypeSegment = sanitizePathSegment(preferredType, '');
+  let typeSegment = preferredTypeSegment;
+  if (!typeSegment) {
+    typeSegment = sanitizePathSegment(
+      details?.model_type || details?.type || card.dataset.modelType,
+      ''
+    );
+  }
+
+  const baseModel = baseModelOverride || resolveBaseModel(details, card, versionId);
+  if (baseModel && card?.dataset) {
+    card.dataset.baseModel = baseModel;
+  }
+
+  const baseSegment = sanitizePathSegment(
+    baseModel,
+    typeSegment ? `${typeSegment}_base` : 'base_model'
+  );
+
   const modelSegment = sanitizePathSegment(
-    details?.model_name || card.dataset.modelName,
+    details?.model_name || details?.model?.name || card.dataset.modelName,
     modelId ? `model-${modelId}` : ''
   );
 
   const versionSegment = sanitizePathSegment(
-    details?.version_name || card.dataset.versionName,
+    details?.version_name || details?.model_version_name || card.dataset.versionName,
     versionId ? `version-${versionId}` : ''
   );
 
-  return [modelSegment, versionSegment].filter(Boolean).join('/');
+  const segments = [];
+  if (!preferredTypeSegment && typeSegment) segments.push(typeSegment);
+  if (baseSegment) segments.push(baseSegment);
+  if (modelSegment) segments.push(modelSegment);
+  if (versionSegment) segments.push(versionSegment);
+
+  return segments.join('/');
 }
 
 function toInt(value) {
@@ -363,13 +435,19 @@ async function handleQuickDownload(card, ctx) {
     }
 
     const modelTypeOptions = ctx.getModelTypeOptions();
+    const resolvedVersionId = details?.version_id || details?.versionId || versionId;
+    const resolvedBaseModel = resolveBaseModel(details, card, resolvedVersionId);
+    if (resolvedBaseModel) {
+      card.dataset.baseModel = resolvedBaseModel;
+    }
     const inferred = ctx.inferModelType(details.model_type || card.dataset.modelType);
     if (details.model_name) card.dataset.modelName = details.model_name;
     if (details.version_name) card.dataset.versionName = details.version_name;
     if (details.version_id) card.dataset.versionId = details.version_id;
+    const selectedModelType = inferred || settings?.defaultModelType || card.dataset.modelType || '';
     const defaults = {
-      modelType: inferred || settings?.defaultModelType || card.dataset.modelType || '',
-      subdir: buildAutoSubdir(card, details),
+      modelType: selectedModelType,
+      subdir: buildAutoSubdir(card, details, selectedModelType, resolvedBaseModel),
       filename: '',
     };
     if (defaults.modelType) card.dataset.modelType = defaults.modelType;
