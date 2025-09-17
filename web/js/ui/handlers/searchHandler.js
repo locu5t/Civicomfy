@@ -280,8 +280,6 @@ function buildSearchHitFromDetails(details) {
   return hit;
 }
 
-const POLL_INTERVAL = 3000;
-
 export async function handleSearchSubmit(ui) {
   ui.searchSubmitButton.disabled = true;
   ui.searchSubmitButton.textContent = 'Searching...';
@@ -548,9 +546,11 @@ async function handleQueue(card, ctx) {
       return;
     }
     attachQueueId(card, queueId);
+    if (typeof ctx.options.onQueueAttached === 'function') {
+      ctx.options.onQueueAttached(card, queueId, response);
+    }
     ctx.toast('Download queued', 'success');
     toggleDrawer(card, false);
-    startStatusPolling(card, queueId, ctx);
     if (typeof ctx.options.onQueueSuccess === 'function') {
       ctx.options.onQueueSuccess(queueId, response, card);
     }
@@ -779,93 +779,3 @@ function attachQueueId(card, queueId) {
   badge.textContent = 'Queued';
 }
 
-function startStatusPolling(card, queueId, ctx) {
-  const poll = async () => {
-    try {
-      const status = await ctx.api.getStatus();
-      const entry = findEntryById(status, queueId);
-      if (entry) {
-        renderStatusOnCard(card, entry, ctx);
-        if (['completed', 'failed', 'cancelled'].includes(entry.status)) {
-          finalizeBadge(card, entry.status, ctx);
-          return;
-        }
-      } else if (status && Array.isArray(status.history)) {
-        const historyEntry = status.history.find(item => item.id === queueId);
-        if (historyEntry) {
-          renderStatusOnCard(card, historyEntry, ctx);
-          finalizeBadge(card, historyEntry.status || 'completed', ctx);
-          return;
-        }
-      }
-    } catch (error) {
-      console.error('Status poll error', error);
-    }
-    card.__civiStatusTimer = setTimeout(poll, POLL_INTERVAL);
-  };
-  if (card.__civiStatusTimer) clearTimeout(card.__civiStatusTimer);
-  poll();
-}
-
-function renderStatusOnCard(card, status, ctx) {
-  let bar = card.querySelector('.civi-progress');
-  if (!bar) {
-    bar = document.createElement('div');
-    bar.className = 'civi-progress';
-    const actions = card.querySelector('.civi-actions');
-    (actions || card).appendChild(bar);
-  }
-  const progress = Number.isFinite(status?.progress) ? Math.max(0, Math.min(100, status.progress)) : 0;
-  const speed = Number(status?.speed) > 0 ? `${formatBytes(status.speed)}/s` : '';
-  bar.style.setProperty('--civi-progress', `${progress}%`);
-  bar.textContent = `${Math.round(progress)}%${speed ? ` • ${speed}` : ''}`;
-  if (status?.status === 'failed') {
-    bar.classList.add('failed');
-  }
-}
-
-function finalizeBadge(card, state, ctx) {
-  if (card.__civiStatusTimer) {
-    clearTimeout(card.__civiStatusTimer);
-    card.__civiStatusTimer = null;
-  }
-  const badge = card.querySelector('.civi-queued-badge');
-  if (!badge) return;
-  if (state === 'completed') {
-    badge.textContent = 'Done';
-    ctx.toast('Download finished', 'success');
-  } else if (state === 'failed') {
-    badge.textContent = 'Failed';
-    ctx.toast('Download failed', 'error');
-  } else if (state === 'cancelled') {
-    badge.textContent = 'Cancelled';
-    ctx.toast('Download cancelled', 'info');
-  } else {
-    badge.textContent = state;
-  }
-}
-
-function findEntryById(status, queueId) {
-  if (!status) return null;
-  const lists = ['active', 'queue'];
-  for (const key of lists) {
-    const arr = status[key];
-    if (Array.isArray(arr)) {
-      const found = arr.find(item => item.id === queueId);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-function formatBytes(bytes) {
-  if (!bytes || !Number.isFinite(bytes)) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex++;
-  }
-  return `${Math.round(value * 10) / 10} ${units[unitIndex]}`;
-}

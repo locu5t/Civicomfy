@@ -11,8 +11,9 @@ export function modalTemplate(settings = {}) {
       <div class="civitai-downloader-body">
         <div class="civitai-downloader-tabs">
           <button class="civitai-downloader-tab active" data-tab="library">Library</button>
-          <button class="civitai-downloader-tab" data-tab="search">Search</button>
-          <button class="civitai-downloader-tab" data-tab="status">Status <span id="civitai-status-indicator" style="display: none;">(<span id="civitai-active-count">0</span>)</span></button>
+          <button class="civitai-downloader-tab" data-tab="search">
+            Search<span id="civitai-download-indicator" class="civitai-download-indicator" aria-live="polite"></span>
+          </button>
           <button class="civitai-downloader-tab" data-tab="settings">Settings</button>
         </div>
         <div id="civitai-tab-library" class="civitai-downloader-tab-content active">
@@ -53,33 +54,6 @@ export function modalTemplate(settings = {}) {
           <div id="civitai-search-results" class="civitai-search-results"></div>
           <div id="civitai-search-pagination" style="text-align: center; margin-top: 20px;"></div>
         </div>
-        <div id="civitai-tab-status" class="civitai-downloader-tab-content">
-          <div id="civitai-status-content">
-            <div class="civitai-status-section">
-              <h3>Active Downloads</h3>
-              <div id="civitai-active-list" class="civitai-download-list">
-                <p>No active downloads.</p>
-              </div>
-            </div>
-            <div class="civitai-status-section">
-              <h3>Queued Downloads</h3>
-              <div id="civitai-queued-list" class="civitai-download-list">
-                <p>Download queue is empty.</p>
-              </div>
-            </div>
-            <div class="civitai-status-section">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h3>Download History (Recent)</h3>
-                <button id="civitai-clear-history-button" class="civitai-button danger small" title="Clear all history items">
-                  <i class="fas fa-trash-alt"></i> Clear History
-                </button>
-              </div>
-              <div id="civitai-history-list" class="civitai-download-list">
-                <p>No download history yet.</p>
-              </div>
-            </div>
-          </div>
-        </div>
         <div id="civitai-tab-settings" class="civitai-downloader-tab-content">
           <form id="civitai-settings-form">
             <div class="civitai-settings-container">
@@ -102,10 +76,6 @@ export function modalTemplate(settings = {}) {
               </div>
               <div class="civitai-settings-section">
                 <h4>Interface & Search</h4>
-                <div class="civitai-form-group inline">
-                  <input type="checkbox" id="civitai-settings-auto-open-status" class="civitai-checkbox">
-                  <label for="civitai-settings-auto-open-status">Switch to Status tab after starting download</label>
-                </div>
                 <div class="civitai-form-group inline">
                   <input type="checkbox" id="civitai-settings-hide-mature" class="civitai-checkbox" ${settings.hideMatureInSearch ? 'checked' : ''}>
                   <label for="civitai-settings-hide-mature">Hide R-rated (Mature) images in search (click to reveal)</label>
@@ -130,17 +100,6 @@ export function modalTemplate(settings = {}) {
       </div>
       <!-- Toast Notification Area -->
       <div id="civitai-toast" class="civitai-toast"></div>
-      <!-- Confirmation Modal -->
-      <div id="civitai-confirm-clear-modal" class="civitai-confirmation-modal">
-        <div class="civitai-confirmation-modal-content">
-          <h4>Confirm Clear History</h4>
-          <p>Are you sure you want to clear the download history? This action cannot be undone.</p>
-          <div class="civitai-confirmation-modal-actions">
-            <button id="civitai-confirm-clear-no" class="civitai-button secondary">Cancel</button>
-            <button id="civitai-confirm-clear-yes" class="civitai-button danger">Confirm Clear</button>
-          </div>
-        </div>
-      </div>
     </div>
   `;
 }

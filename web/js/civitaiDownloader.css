@@ -89,6 +89,11 @@
     top: 1px; /* Align with bottom border */
     margin-bottom: -1px; /* Overlap border */
 }
+.civitai-download-indicator {
+    margin-left: 6px;
+    font-size: 0.85em;
+    color: var(--accent-color, #5c8aff);
+}
 
 .civitai-downloader-tab.active {
     opacity: 1;
@@ -897,10 +902,63 @@
     color: #fff;
     padding: 4px 8px;
     font-size: 0.85rem;
-    min-width: 140px;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+    text-align: center;
 }
 .civi-progress.failed {
     background: linear-gradient(90deg, rgba(198, 40, 40, 0.55) var(--civi-progress, 0%), rgba(255, 255, 255, 0.04) var(--civi-progress, 0%));
+}
+.civi-progress.completed {
+    background: linear-gradient(90deg, rgba(76, 175, 80, 0.45) var(--civi-progress, 0%), rgba(255, 255, 255, 0.04) var(--civi-progress, 0%));
+}
+.civi-progress.indeterminate {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.civi-status-footer {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.civi-status-footer.hidden {
+    display: none;
+}
+.civi-status-line {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.civi-status-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+.civi-status-actions.hidden {
+    display: none;
+}
+.civi-status-error {
+    color: var(--error-text, #ff6b6b);
+    font-size: 0.85rem;
+}
+.civi-status-action-cancel {
+    background: rgba(198, 40, 40, 0.6);
+    color: #fff;
+}
+.civi-status-action-retry {
+    background: rgba(33, 150, 243, 0.6);
+    color: #fff;
+}
+.civi-status-action-open {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+.civi-status-action-open:hover {
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .civi-queued-badge {
@@ -911,6 +969,15 @@
     margin-left: 8px;
     font-size: 0.8rem;
     color: #fff;
+}
+.civi-queued-badge.state-success {
+    background: rgba(76, 175, 80, 0.45);
+}
+.civi-queued-badge.state-error {
+    background: rgba(198, 40, 40, 0.55);
+}
+.civi-queued-badge.state-active {
+    background: rgba(21, 101, 192, 0.55);
 }
 
 .civi-preview-title {
