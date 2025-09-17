@@ -9,6 +9,49 @@ const RESERVED_SEGMENTS = new Set([
 
 const CIVITAI_HOSTS = new Set(['civitai.com', 'www.civitai.com']);
 
+function escapeRegex(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function cleanBaseModelName(raw) {
+  if (!raw) return '';
+  let text = String(raw);
+  text = text.replace(/\[[^\]]*\]/g, ' ');
+  text = text.replace(/\s+/g, ' ').trim();
+  return text;
+}
+
+function cleanModelTitle(rawTitle, baseModelName, versionName) {
+  if (!rawTitle) return '';
+  let text = String(rawTitle);
+
+  text = text.replace(/\[[^\]]*\]/g, ' ');
+
+  const cleanedBase = cleanBaseModelName(baseModelName);
+  if (cleanedBase) {
+    const basePattern = new RegExp(`^${escapeRegex(cleanedBase)}[\\s_-]*`, 'i');
+    text = text.replace(basePattern, '');
+
+    const parenPattern = new RegExp(`\\((?:[^)]*${escapeRegex(cleanedBase)}[^)]*)\\)`, 'i');
+    text = text.replace(parenPattern, ' ');
+  }
+
+  const versionCandidates = [];
+  if (versionName) {
+    versionCandidates.push(String(versionName));
+    const trimmed = String(versionName).replace(/^version\s+/i, '').trim();
+    if (trimmed && trimmed !== versionName) versionCandidates.push(trimmed);
+  }
+  const uniqueVersions = Array.from(new Set(versionCandidates.filter(Boolean)));
+  uniqueVersions.forEach((candidate) => {
+    const pattern = new RegExp(`[\\s_-]*${escapeRegex(candidate)}$`, 'i');
+    text = text.replace(pattern, '');
+  });
+
+  text = text.replace(/\s+/g, ' ').trim();
+  return text;
+}
+
 function sanitizePathSegment(value, fallback = '') {
   const attempt = (raw) => {
     if (raw === undefined || raw === null) return '';
@@ -101,23 +144,28 @@ function buildAutoFolderStructure(card, details, preferredType, baseModelOverrid
     );
   }
 
-  const baseModel = baseModelOverride || resolveBaseModel(details, card, versionId);
-  if (baseModel && card?.dataset) {
-    card.dataset.baseModel = baseModel;
+  const baseModelRaw = baseModelOverride || resolveBaseModel(details, card, versionId);
+  if (baseModelRaw && card?.dataset) {
+    card.dataset.baseModel = baseModelRaw;
   }
 
-  const baseSegment = sanitizePathSegment(
-    baseModel,
-    typeSegment ? `${typeSegment}_base` : 'base_model'
-  );
+  const baseFallback = typeSegment ? `${typeSegment}_base` : 'base_model';
+  const sanitizedOriginalBase = sanitizePathSegment(baseModelRaw, baseFallback);
+  const cleanedBaseModel = cleanBaseModelName(baseModelRaw);
+  const baseSegment = cleanedBaseModel
+    ? sanitizePathSegment(cleanedBaseModel, sanitizedOriginalBase || baseFallback)
+    : sanitizedOriginalBase;
 
-  const modelSegment = sanitizePathSegment(
-    details?.model_name || details?.model?.name || card.dataset.modelName,
-    modelId ? `model-${modelId}` : 'model'
-  );
+  const rawModelName = details?.model_name || details?.model?.name || card.dataset.modelName;
+  const fallbackModelSegment = sanitizePathSegment(rawModelName, modelId ? `model-${modelId}` : 'model');
+  const cleanedModelTitle = cleanModelTitle(rawModelName, cleanedBaseModel || baseModelRaw, details?.version_name || details?.model_version_name || card.dataset.versionName);
+  const modelSegment = cleanedModelTitle
+    ? sanitizePathSegment(cleanedModelTitle, fallbackModelSegment || (modelId ? `model-${modelId}` : 'model'))
+    : fallbackModelSegment;
 
+  const versionNameRaw = details?.version_name || details?.model_version_name || card.dataset.versionName;
   const versionSegment = sanitizePathSegment(
-    details?.version_name || details?.model_version_name || card.dataset.versionName,
+    versionNameRaw,
     versionId ? `version-${versionId}` : 'version'
   );
 
@@ -737,16 +785,21 @@ function ensurePathPreviewListeners(card) {
 
       const rootValue = rootSelect?.value || card.dataset.modelType || '';
       const sanitizedType = sanitizePathSegment(rootValue, '');
-      const baseName =
+      const baseNameRaw =
         versionInfo?.baseModel ||
         versionInfo?.base_model ||
         versionInfo?.base ||
         card.dataset.baseModel ||
         '';
-      if (baseName && card.dataset) {
-        card.dataset.baseModel = baseName;
+      if (baseNameRaw && card.dataset) {
+        card.dataset.baseModel = baseNameRaw;
       }
-      const baseAuto = sanitizePathSegment(baseName, sanitizedType ? `${sanitizedType}_base` : 'base_model');
+      const baseFallback = sanitizedType ? `${sanitizedType}_base` : 'base_model';
+      const baseOriginalSanitized = sanitizePathSegment(baseNameRaw, baseFallback);
+      const cleanedBaseName = cleanBaseModelName(baseNameRaw);
+      const baseAuto = cleanedBaseName
+        ? sanitizePathSegment(cleanedBaseName, baseOriginalSanitized || baseFallback)
+        : baseOriginalSanitized;
       if (card.dataset) {
         card.dataset.autoBaseFolder = baseAuto;
       }
