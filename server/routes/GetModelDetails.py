@@ -142,6 +142,23 @@ async def route_get_model_details(request):
                     "downloadable": bool(f.get("downloadUrl")),
                 })
 
+        # Build a lightweight list of available versions for dropdowns/search UI
+        version_summaries = []
+        model_versions = model_info.get("modelVersions") if isinstance(model_info, dict) else None
+        if isinstance(model_versions, list):
+            for v in model_versions:
+                if not isinstance(v, dict):
+                    continue
+                vid = v.get("id") or v.get("versionId")
+                if not vid:
+                    continue
+                version_summaries.append({
+                    "id": vid,
+                    "name": v.get("name") or f"Version {vid}",
+                    "baseModel": v.get("baseModel") or v.get("base_model") or "",
+                    "type": v.get("type") or v.get("model_type") or "",
+                })
+
         # --- Return curated data ---
         return web.json_response({
             "success": True,
@@ -171,6 +188,7 @@ async def route_get_model_details(request):
             "nsfw_level": nsfw_level,
             # Optionally include basic version info like baseModel
             "base_model": version_info.get("baseModel", "N/A"),
+            "model_versions": version_summaries,
             # You could add tags here too if desired: model_info.get('tags', [])
         })
 

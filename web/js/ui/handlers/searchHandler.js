@@ -94,13 +94,46 @@ function buildSearchHitFromDetails(details) {
       }
     : null;
 
-  const versions = versionSummary ? [versionSummary] : [];
+  const versionsFromDetails = Array.isArray(details.model_versions)
+    ? details.model_versions
+        .map((version) => {
+          const vid = toInt(version?.id) ?? version?.id ?? version?.versionId;
+          if (!vid) return null;
+          return {
+            id: vid,
+            name: version?.name || `Version ${vid}`,
+            baseModel: version?.baseModel || version?.base_model || '',
+            type: version?.type || version?.model_type || '',
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  const versions = versionsFromDetails.length > 0
+    ? versionsFromDetails
+    : (versionSummary ? [versionSummary] : []);
+
+  const selectedVersion = versionId
+    ? versions.find((version) => String(version.id) === String(versionId)) || versionSummary
+    : versionSummary || versions[0] || null;
+
+  const versionForHit = selectedVersion
+    ? { ...selectedVersion, thumbnailUrl: details.thumbnail_url }
+    : undefined;
+
+  const inferredBaseModel = (selectedVersion && selectedVersion.baseModel)
+    ? selectedVersion.baseModel
+    : (details.base_model || '');
+
+  const inferredType = (selectedVersion && selectedVersion.type)
+    ? selectedVersion.type
+    : (details.model_type || '');
 
   const hit = {
     id: modelId,
     modelId,
     name: details.model_name || details.version_name || 'Untitled Model',
-    type: details.model_type || '',
+    type: inferredType,
     metrics,
     stats: metrics,
     thumbnailUrl: details.thumbnail_url,
@@ -109,8 +142,8 @@ function buildSearchHitFromDetails(details) {
     user: details.creator_username ? { username: details.creator_username } : undefined,
     versions,
     modelVersions: versions,
-    version: versionSummary ? { ...versionSummary, thumbnailUrl: details.thumbnail_url } : undefined,
-    baseModel: details.base_model || '',
+    version: versionForHit,
+    baseModel: inferredBaseModel,
     raw: { directDetails: true, data: details },
   };
 
