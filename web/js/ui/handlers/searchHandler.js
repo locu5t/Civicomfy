@@ -1,7 +1,60 @@
 import { toggleDrawer, populateDrawerWithDetails, renderLocalInfo } from '../searchRenderer.js';
 import { CivitaiDownloaderAPI } from '../../api/civitai.js';
 
+const RESERVED_SEGMENTS = new Set([
+  'con', 'prn', 'aux', 'nul',
+  'com1', 'com2', 'com3', 'com4', 'com5', 'com6', 'com7', 'com8', 'com9',
+  'lpt1', 'lpt2', 'lpt3', 'lpt4', 'lpt5', 'lpt6', 'lpt7', 'lpt8', 'lpt9',
+]);
+
 const CIVITAI_HOSTS = new Set(['civitai.com', 'www.civitai.com']);
+
+function sanitizePathSegment(value, fallback = '') {
+  const attempt = (raw) => {
+    if (raw === undefined || raw === null) return '';
+    let segment = String(raw).trim();
+    if (!segment) return '';
+    try {
+      segment = segment.normalize('NFKD');
+    } catch (err) {
+      // ignore lack of Unicode support
+    }
+    segment = segment.replace(/[\u0300-\u036f]/g, '');
+    segment = segment.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_');
+    segment = segment.replace(/\s+/g, '_');
+    segment = segment.replace(/_+/g, '_');
+    segment = segment.replace(/^_+|_+$/g, '');
+    segment = segment.replace(/^\.+/, '').replace(/\.+$/, '');
+    segment = segment.slice(0, 80);
+    segment = segment.toLowerCase();
+    if (RESERVED_SEGMENTS.has(segment)) {
+      segment = `_${segment}`;
+    }
+    return segment;
+  };
+
+  const primary = attempt(value);
+  if (primary) return primary;
+  return attempt(fallback);
+}
+
+function buildAutoSubdir(card, details) {
+  if (!card) return '';
+  const modelId = details?.model_id || details?.modelId || card.dataset.modelId;
+  const versionId = details?.version_id || details?.versionId || card.dataset.versionId;
+
+  const modelSegment = sanitizePathSegment(
+    details?.model_name || card.dataset.modelName,
+    modelId ? `model-${modelId}` : ''
+  );
+
+  const versionSegment = sanitizePathSegment(
+    details?.version_name || card.dataset.versionName,
+    versionId ? `version-${versionId}` : ''
+  );
+
+  return [modelSegment, versionSegment].filter(Boolean).join('/');
+}
 
 function toInt(value) {
   if (value === null || value === undefined) return null;
@@ -311,13 +364,15 @@ async function handleQuickDownload(card, ctx) {
 
     const modelTypeOptions = ctx.getModelTypeOptions();
     const inferred = ctx.inferModelType(details.model_type || card.dataset.modelType);
+    if (details.model_name) card.dataset.modelName = details.model_name;
+    if (details.version_name) card.dataset.versionName = details.version_name;
+    if (details.version_id) card.dataset.versionId = details.version_id;
     const defaults = {
       modelType: inferred || settings?.defaultModelType || card.dataset.modelType || '',
-      subdir: '',
+      subdir: buildAutoSubdir(card, details),
       filename: '',
     };
     if (defaults.modelType) card.dataset.modelType = defaults.modelType;
-    if (details.version_id) card.dataset.versionId = details.version_id;
     populateDrawerWithDetails(card, details, modelTypeOptions, defaults);
     if (versionSelect && details.version_id) {
       versionSelect.value = String(details.version_id);
