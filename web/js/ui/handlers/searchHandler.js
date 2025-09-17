@@ -1,6 +1,126 @@
 import { toggleDrawer, populateDrawerWithDetails, renderLocalInfo } from '../searchRenderer.js';
 import { CivitaiDownloaderAPI } from '../../api/civitai.js';
 
+const CIVITAI_HOSTS = new Set(['civitai.com', 'www.civitai.com']);
+
+function toInt(value) {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!/^\d+$/.test(text)) return null;
+  const num = Number.parseInt(text, 10);
+  return Number.isNaN(num) ? null : num;
+}
+
+function parseModelLookup(value) {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return null;
+  if (/^\d+$/.test(trimmed)) {
+    return { modelId: Number.parseInt(trimmed, 10), versionId: null };
+  }
+
+  let candidate = trimmed;
+  if (!candidate.includes('://')) {
+    candidate = `https://civitai.com/${candidate.replace(/^\/+/, '')}`;
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(candidate);
+  } catch (err) {
+    return null;
+  }
+
+  const host = parsedUrl.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!CIVITAI_HOSTS.has(host)) return null;
+
+  const segments = parsedUrl.pathname.split('/').filter(Boolean);
+  const segmentsLower = segments.map(segment => segment.toLowerCase());
+
+  const findIdAfter = (tokens) => {
+    for (const token of tokens) {
+      const lowerToken = token.toLowerCase();
+      const idx = segmentsLower.indexOf(lowerToken);
+      if (idx !== -1 && segments[idx + 1]) {
+        const maybeId = toInt(segments[idx + 1]);
+        if (maybeId !== null) return maybeId;
+      }
+    }
+    return null;
+  };
+
+  const modelId = findIdAfter(['models']);
+  let versionId = findIdAfter(['model-versions', 'modelversions']);
+
+  if (versionId === null) {
+    versionId = toInt(parsedUrl.searchParams.get('modelVersionId') || parsedUrl.searchParams.get('modelVersion'));
+  }
+
+  if (versionId === null && parsedUrl.hash) {
+    try {
+      const hashParams = new URLSearchParams(parsedUrl.hash.replace(/^#/, ''));
+      versionId = toInt(hashParams.get('modelVersionId') || hashParams.get('modelVersion'));
+    } catch (err) {
+      // ignore malformed hash params
+    }
+  }
+
+  if (modelId === null && versionId === null) {
+    return null;
+  }
+
+  return { modelId, versionId };
+}
+
+function buildSearchHitFromDetails(details) {
+  if (!details || details.success === false) return null;
+
+  const modelId = toInt(details.model_id) ?? details.model_id ?? null;
+  const versionId = toInt(details.version_id);
+  const stats = details.stats || {};
+
+  const metrics = {
+    downloadCount: stats.downloads ?? stats.downloadCount,
+    thumbsUpCount: stats.likes ?? stats.thumbsUpCount,
+    thumbsDownCount: stats.dislikes ?? stats.thumbsDownCount,
+    tippedAmountCount: stats.buzz ?? stats.tippedAmountCount,
+  };
+
+  const versionSummary = versionId
+    ? {
+        id: versionId,
+        name: details.version_name || `Version ${versionId}`,
+        baseModel: details.base_model || '',
+        type: details.model_type || '',
+      }
+    : null;
+
+  const versions = versionSummary ? [versionSummary] : [];
+
+  const hit = {
+    id: modelId,
+    modelId,
+    name: details.model_name || details.version_name || 'Untitled Model',
+    type: details.model_type || '',
+    metrics,
+    stats: metrics,
+    thumbnailUrl: details.thumbnail_url,
+    previewImage: details.thumbnail_url,
+    creator: details.creator_username || undefined,
+    user: details.creator_username ? { username: details.creator_username } : undefined,
+    versions,
+    modelVersions: versions,
+    version: versionSummary ? { ...versionSummary, thumbnailUrl: details.thumbnail_url } : undefined,
+    baseModel: details.base_model || '',
+    raw: { directDetails: true, data: details },
+  };
+
+  if (details.nsfw_level !== undefined && details.nsfw_level !== null) {
+    hit.nsfwLevel = details.nsfw_level;
+  }
+
+  return hit;
+}
+
 const POLL_INTERVAL = 3000;
 
 export async function handleSearchSubmit(ui) {
@@ -10,17 +130,45 @@ export async function handleSearchSubmit(ui) {
   ui.searchPaginationContainer.innerHTML = '';
   ui.ensureFontAwesome();
 
-  const params = {
-    query: ui.searchQueryInput.value.trim(),
-    model_types: ui.searchTypeSelect.value === 'any' ? [] : [ui.searchTypeSelect.value],
-    base_models: ui.searchBaseModelSelect.value === 'any' ? [] : [ui.searchBaseModelSelect.value],
-    sort: ui.searchSortSelect.value,
-    limit: ui.searchPagination.limit,
-    page: ui.searchPagination.currentPage,
-    api_key: ui.settings.apiKey,
-  };
+  const query = ui.searchQueryInput.value.trim();
+  const directLookup = parseModelLookup(query);
 
   try {
+    if (directLookup) {
+      try {
+        const payload = {
+          model_url_or_id: query,
+          model_version_id: directLookup.versionId ?? null,
+          api_key: ui.settings.apiKey,
+        };
+        const details = await CivitaiDownloaderAPI.getModelDetails(payload);
+        const directHit = buildSearchHitFromDetails(details);
+        if (!directHit) {
+          const err = new Error('Model details response was missing required data.');
+          err.details = 'Model details response was missing required data.';
+          throw err;
+        }
+        ui.renderSearchResults([directHit]);
+        ui.renderSearchPagination({ totalItems: 1, totalPages: 1, currentPage: 1, pageSize: 1 });
+        return;
+      } catch (directError) {
+        console.warn('Direct model lookup failed, falling back to full search.', directError);
+        if (directError?.status === 404) {
+          ui.showToast(directError.details || 'Model not found. Showing regular search results instead.', 'info', 4500);
+        }
+      }
+    }
+
+    const params = {
+      query,
+      model_types: ui.searchTypeSelect.value === 'any' ? [] : [ui.searchTypeSelect.value],
+      base_models: ui.searchBaseModelSelect.value === 'any' ? [] : [ui.searchBaseModelSelect.value],
+      sort: ui.searchSortSelect.value,
+      limit: ui.searchPagination.limit,
+      page: ui.searchPagination.currentPage,
+      api_key: ui.settings.apiKey,
+    };
+
     const response = await CivitaiDownloaderAPI.searchModels(params);
     if (!response || !response.metadata || !Array.isArray(response.items)) {
       console.error('Invalid search response structure:', response);
