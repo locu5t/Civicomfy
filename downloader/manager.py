@@ -290,6 +290,12 @@ class DownloadManager:
         if info_copy["status"] != "completed" and not info_copy.get("error"):
             info_copy["error"] = f"Finished with status '{info_copy['status']}' but no error recorded."
 
+        output_path = info_copy.get("output_path")
+        try:
+            info_copy["output_exists"] = bool(output_path and os.path.exists(output_path))
+        except Exception:
+            info_copy["output_exists"] = False
+
         # --- Update in-memory history ---
         self.history.insert(0, info_copy) # Prepend
         # Trim in-memory list (save will also respect limit)
@@ -751,6 +757,95 @@ class DownloadManager:
              print(f"[Manager] Error requeuing download for retry (Original ID: {original_download_id}): {e}")
              return {"success": False, "error": f"Failed to queue retry: {e}"}
 
+    def _validate_safe_path(self, file_path: Optional[str]) -> tuple[bool, Optional[str], Optional[str]]:
+        """Ensure the provided file path is within known safe directories."""
+        if not file_path:
+            return False, None, "Output path not found for this download."
+
+        try:
+            abs_file_path = os.path.abspath(file_path)
+            folder_path = os.path.dirname(abs_file_path)
+        except Exception as e:
+            return False, None, f"Error processing path: {e}"
+
+        if not folder_path:
+            return False, None, "Failed to determine containing folder."
+
+        is_safe_path = False
+
+        try:
+            if COMFY_PATHS_AVAILABLE:
+                known_types = [
+                    "checkpoints", "loras", "vae", "embeddings", "hypernetworks",
+                    "controlnet", "upscale_models", "clip_vision", "gligen", "configs",
+                    "unet", "diffusers", "motion_models", "poses", "wildcards"
+                ]
+                known_dirs = [
+                    os.path.abspath(get_directory_by_type(t))
+                    for t in known_types
+                    if get_directory_by_type(t)
+                ]
+
+                # Also allow output and input directories
+                if get_directory_by_type("output"):
+                    known_dirs.append(os.path.abspath(get_directory_by_type("output")))
+                if get_directory_by_type("input"):
+                    known_dirs.append(os.path.abspath(get_directory_by_type("input")))
+
+                # Add the plugin's own 'other_models' directory as safe
+                known_dirs.append(os.path.abspath(os.path.join(PLUGIN_ROOT, "other_models")))
+
+                # Add plugin-managed custom roots as safe
+                try:
+                    import json as _json
+                    roots_file = os.path.join(PLUGIN_ROOT, "custom_roots.json")
+                    if os.path.exists(roots_file):
+                        with open(roots_file, 'r', encoding='utf-8') as fh:
+                            data = _json.load(fh)
+                            if isinstance(data, dict):
+                                for values in data.values():
+                                    if isinstance(values, list):
+                                        for candidate in values:
+                                            if isinstance(candidate, str):
+                                                known_dirs.append(os.path.abspath(candidate))
+                except Exception as err:
+                    print(f"[Manager Path Validation] Warning: Failed to load custom roots: {err}")
+
+                # Include all first-level subdirectories under models_dir as safe
+                try:
+                    models_dir = getattr(__import__('folder_paths'), 'folder_paths').models_dir
+                except Exception:
+                    models_dir = None
+
+                try:
+                    if models_dir and os.path.isdir(models_dir):
+                        for name in os.listdir(models_dir):
+                            candidate = os.path.join(models_dir, name)
+                            if os.path.isdir(candidate):
+                                known_dirs.append(os.path.abspath(candidate))
+                except Exception as err:
+                    print(f"[Manager Path Validation] Warning: Failed enumerating models_dir subfolders: {err}")
+
+                for known_dir in known_dirs:
+                    try:
+                        if os.path.commonpath([known_dir, folder_path]) == known_dir:
+                            is_safe_path = True
+                            break
+                    except Exception:
+                        continue
+            else:
+                comfy_base = os.path.abspath(base_path)
+                if os.path.commonpath([comfy_base, folder_path]) == comfy_base:
+                    is_safe_path = True
+
+        except Exception as e:
+            return False, folder_path, f"Error validating path: {e}"
+
+        if not is_safe_path:
+            return False, folder_path, "Directory is outside allowed locations."
+
+        return True, folder_path, None
+
     # --- NEW: Open Containing Folder Method ---
     def open_containing_folder(self, download_id: str) -> Dict[str, Any]:
         """Opens the directory containing the specified completed download file."""
@@ -774,109 +869,201 @@ class DownloadManager:
         if not file_path:
             return {"success": False, "error": "Output path not found for this download."}
 
-        # --- Security Check: Ensure the path is within expected ComfyUI directories ---
-        # (This is a basic check, might need refinement based on your setup)
-        is_safe_path = False
+        is_safe, folder_path, validation_error = self._validate_safe_path(file_path)
+        if not is_safe:
+            if folder_path:
+                print(f"[Manager OpenPath Denied] Path '{folder_path}' failed validation: {validation_error}")
+            return {"success": False, "error": f"Cannot open path: {validation_error}"}
+
+        if not folder_path:
+            return {"success": False, "error": "Failed to resolve containing folder."}
+
+        if not os.path.exists(folder_path):
+            return {"success": False, "error": f"Directory does not exist: {folder_path}"}
+        if not os.path.isdir(folder_path):
+            return {"success": False, "error": f"Path is not a directory: {folder_path}"}
+
         try:
-            # Get the absolute path
-            abs_file_path = os.path.abspath(file_path)
-            folder_path = os.path.dirname(abs_file_path)
-
-            # Option 1: Check against ComfyUI's known directories (preferred)
-            if COMFY_PATHS_AVAILABLE:
-                 # Check if the folder is within any known model type directory
-                 known_types = [
-                     "checkpoints", "loras", "vae", "embeddings", "hypernetworks",
-                     "controlnet", "upscale_models", "clip_vision", "gligen", "configs",
-                     "unet", "diffusers", "motion_models", "poses", "wildcards"
-                 ]
-                 known_dirs = [os.path.abspath(get_directory_by_type(t)) for t in known_types if get_directory_by_type(t)]
-                 # Also allow output and input directories
-                 if get_directory_by_type("output"): known_dirs.append(os.path.abspath(get_directory_by_type("output")))
-                 if get_directory_by_type("input"): known_dirs.append(os.path.abspath(get_directory_by_type("input")))
-                 # Add the plugin's own 'other_models' directory as safe
-                 known_dirs.append(os.path.abspath(os.path.join(PLUGIN_ROOT, "other_models")))
-                 # Add plugin-managed custom roots as safe
-                 try:
-                     import json as _json
-                     _roots_file = os.path.join(PLUGIN_ROOT, "custom_roots.json")
-                     if os.path.exists(_roots_file):
-                         with open(_roots_file, 'r', encoding='utf-8') as _f:
-                             _data = _json.load(_f)
-                             if isinstance(_data, dict):
-                                 for _lst in _data.values():
-                                     if isinstance(_lst, list):
-                                         for _p in _lst:
-                                             if isinstance(_p, str):
-                                                 known_dirs.append(os.path.abspath(_p))
-                 except Exception as _e:
-                     print(f"[Manager OpenPath] Warning: Failed to load custom roots: {_e}")
-                 # Include all first-level subdirectories under models_dir as safe
-                 try:
-                     models_dir = getattr(__import__('folder_paths'), 'folder_paths').models_dir
-                 except Exception:
-                     models_dir = None
-                 try:
-                     if models_dir and os.path.isdir(models_dir):
-                         for _name in os.listdir(models_dir):
-                             _p = os.path.join(models_dir, _name)
-                             if os.path.isdir(_p):
-                                 known_dirs.append(os.path.abspath(_p))
-                 except Exception as _e2:
-                     print(f"[Manager OpenPath] Warning: Failed enumerating models_dir subfolders: {_e2}")
-
-                 for known_dir in known_dirs:
-                      if os.path.commonpath([known_dir, folder_path]) == known_dir:
-                           is_safe_path = True
-                           break
+            system = platform.system()
+            print(f"[Manager OpenPath] Attempting to open folder '{folder_path}' on {system}...")
+            if system == "Windows":
+                os.startfile(folder_path)
+            elif system == "Darwin":  # macOS
+                subprocess.check_call(["open", folder_path])
+            elif system == "Linux":
+                try:
+                    subprocess.check_call(["xdg-open", folder_path])
+                except FileNotFoundError:
+                    print(f"[Manager OpenPath] 'xdg-open' not found. Cannot automatically open folder on this Linux system.")
+                    return {"success": False, "error": "'xdg-open' command not found. Cannot open folder."}
             else:
-                 # Option 2: Fallback - Check if path is within the ComfyUI base directory
-                 comfy_base = os.path.abspath(base_path)
-                 if os.path.commonpath([comfy_base, folder_path]) == comfy_base:
-                      is_safe_path = True
-                      #print(f"[Manager OpenPath Warning] ComfyUI paths unavailable. Using base path check for {folder_path}")
+                print(f"[Manager OpenPath] Unsupported operating system: {system}. Cannot open folder.")
+                return {"success": False, "error": f"Unsupported OS ({system}) for opening folder."}
 
-            if not is_safe_path:
-                  print(f"[Manager OpenPath Denied] Path '{folder_path}' is outside known safe ComfyUI directories.")
-                  return {"success": False, "error": "Cannot open path: Directory is outside allowed locations."}
+            print(f"[Manager OpenPath] Successfully requested folder opening for '{folder_path}'.")
+            return {"success": True, "message": f"Opened directory: {folder_path}"}
 
-            # --- Open the directory ---
-            if not os.path.exists(folder_path):
-                 return {"success": False, "error": f"Directory does not exist: {folder_path}"}
-            if not os.path.isdir(folder_path):
-                 return {"success": False, "error": f"Path is not a directory: {folder_path}"}
+        except Exception as e:
+            print(f"[Manager OpenPath] Failed to open directory '{folder_path}': {e}")
+            return {"success": False, "error": f"Failed to open directory: {e}"}
 
+    def get_library_items(self) -> List[Dict[str, Any]]:
+        """Return a sanitized list of completed downloads for the library view."""
+        with self.lock:
+            snapshot = [dict(item) for item in self.history if isinstance(item, dict)]
+
+        results: List[Dict[str, Any]] = []
+        for entry in snapshot:
+            status = entry.get("status")
+            if status not in ("completed", "deleted"):
+                continue
+
+            path = entry.get("output_path")
+            exists = False
+            if path:
+                try:
+                    exists = os.path.exists(path)
+                except Exception:
+                    exists = False
+
+            size_bytes = entry.get("known_size")
+            if path and exists:
+                try:
+                    size_bytes = os.path.getsize(path)
+                except Exception:
+                    pass
+
+            base, _ = os.path.splitext(path) if path else (None, None)
+            metadata_path = None
+            preview_path = None
+            if base:
+                meta_candidate = base + METADATA_SUFFIX
+                preview_candidate = base + PREVIEW_SUFFIX
+                try:
+                    if os.path.exists(meta_candidate):
+                        metadata_path = meta_candidate
+                except Exception:
+                    metadata_path = None
+                try:
+                    if os.path.exists(preview_candidate):
+                        preview_path = preview_candidate
+                except Exception:
+                    preview_path = None
+
+            version_info = entry.get("civitai_version_info") or {}
+            model_info = entry.get("civitai_model_info") or {}
+            trained_words = version_info.get("trainedWords")
+            if not isinstance(trained_words, list):
+                trained_words = []
+            tags = model_info.get("tags")
+            if not isinstance(tags, list):
+                tags = []
+
+            results.append({
+                "id": entry.get("id"),
+                "model_id": entry.get("civitai_model_id") or entry.get("model_id"),
+                "version_id": entry.get("civitai_version_id") or entry.get("model_version_id"),
+                "model_name": entry.get("model_name") or model_info.get("name"),
+                "version_name": entry.get("version_name") or version_info.get("name"),
+                "filename": entry.get("filename"),
+                "path": path,
+                "model_type": entry.get("model_type"),
+                "size_bytes": size_bytes,
+                "thumbnail": entry.get("thumbnail"),
+                "thumbnail_nsfw_level": entry.get("thumbnail_nsfw_level"),
+                "file_format": entry.get("file_format"),
+                "file_precision": entry.get("file_precision"),
+                "file_model_size": entry.get("file_model_size"),
+                "downloaded_at": entry.get("end_time") or entry.get("start_time") or entry.get("added_time"),
+                "exists": bool(exists),
+                "metadata_path": metadata_path,
+                "preview_path": preview_path,
+                "deleted": bool(status == "deleted"),
+                "trained_words": trained_words,
+                "tags": tags,
+            })
+
+        return results
+
+    def delete_downloaded_item(self, download_id: str) -> Dict[str, Any]:
+        """Delete the downloaded model file and related artifacts from disk."""
+        if not download_id:
+            return {"success": False, "error": "Missing download ID."}
+
+        with self.lock:
+            entry = next((item for item in self.history if item.get("id") == download_id), None)
+            if not entry:
+                return {"success": False, "error": "Download ID not found."}
+
+            status = entry.get("status")
+            if status == "deleted":
+                return {"success": True, "message": "Model already removed from disk.", "already_deleted": True}
+            if status != "completed":
+                return {"success": False, "error": f"Cannot delete download with status '{status}'."}
+
+            file_path = entry.get("output_path")
+
+        if not file_path:
+            return {"success": False, "error": "Download has no recorded output path."}
+
+        is_safe, folder_path, validation_error = self._validate_safe_path(file_path)
+        if not is_safe:
+            return {"success": False, "error": f"Cannot delete: {validation_error}"}
+
+        targets = []
+        base, _ = os.path.splitext(file_path)
+        targets.append(file_path)
+        if base:
+            targets.append(base + METADATA_SUFFIX)
+            targets.append(base + PREVIEW_SUFFIX)
+
+        removed = []
+        errors = []
+        for target in targets:
+            if not target:
+                continue
             try:
-                 system = platform.system()
-                 print(f"[Manager OpenPath] Attempting to open folder '{folder_path}' on {system}...")
-                 if system == "Windows":
-                      # Use startfile for better handling of spaces etc.
-                      os.startfile(folder_path)
-                 elif system == "Darwin": # macOS
-                      subprocess.check_call(["open", folder_path])
-                 elif system == "Linux":
-                      # Use xdg-open, handle potential errors if command not found
-                      try:
-                            subprocess.check_call(["xdg-open", folder_path])
-                      except FileNotFoundError:
-                            # Fallback for headless systems or if xdg-open isn't installed
-                           print(f"[Manager OpenPath] 'xdg-open' not found. Cannot automatically open folder on this Linux system.")
-                           return {"success": False, "error": "'xdg-open' command not found. Cannot open folder."}
-                 else:
-                      print(f"[Manager OpenPath] Unsupported operating system: {system}. Cannot open folder.")
-                      return {"success": False, "error": f"Unsupported OS ({system}) for opening folder."}
+                if os.path.exists(target):
+                    os.remove(target)
+                    removed.append(target)
+            except Exception as err:
+                errors.append(f"Failed to delete {target}: {err}")
 
-                 print(f"[Manager OpenPath] Successfully requested folder opening for '{folder_path}'.")
-                 return {"success": True, "message": f"Opened directory: {folder_path}"}
+        file_still_exists = False
+        try:
+            file_still_exists = os.path.exists(file_path)
+        except Exception:
+            file_still_exists = False
 
-            except Exception as e:
-                 print(f"[Manager OpenPath] Failed to open directory '{folder_path}': {e}")
-                 return {"success": False, "error": f"Failed to open directory: {e}"}
+        timestamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        except Exception as path_err:
-            # Catch errors during path validation itself
-            print(f"[Manager OpenPath] Error during path validation/retrieval for {download_id}: {path_err}")
-            return {"success": False, "error": f"Error processing path: {path_err}"}
+        with self.lock:
+            entry = next((item for item in self.history if item.get("id") == download_id), None)
+            if entry:
+                entry["output_exists"] = bool(file_still_exists)
+                if not errors:
+                    entry["status"] = "deleted"
+                    entry["deleted"] = True
+                    entry["deleted_time"] = timestamp
+                    entry["removed_files"] = removed
+                else:
+                    entry.setdefault("delete_errors", []).extend(errors)
+                self._save_history_to_file()
+
+        if errors:
+            return {"success": False, "error": errors[0], "removed": removed}
+
+        message = "Model removed from disk."
+        if not removed:
+            message = "Model files were already missing; marked as deleted."
+
+        return {
+            "success": True,
+            "message": message,
+            "removed": removed,
+            "already_missing": not removed,
+            "folder": folder_path,
+        }
 
 # --- Global Instance ---
 manager = DownloadManager(max_concurrent=MAX_CONCURRENT_DOWNLOADS)

@@ -2,7 +2,6 @@
 // Keep structure identical to the original inline HTML to minimize risk
 
 export function modalTemplate(settings = {}) {
-  const numConnections = Number.isFinite(settings.numConnections) ? settings.numConnections : 1;
   return `
     <div class="civitai-downloader-modal-content">
       <div class="civitai-downloader-header">
@@ -11,60 +10,22 @@ export function modalTemplate(settings = {}) {
       </div>
       <div class="civitai-downloader-body">
         <div class="civitai-downloader-tabs">
-          <button class="civitai-downloader-tab active" data-tab="download">Download</button>
+          <button class="civitai-downloader-tab active" data-tab="library">Library</button>
           <button class="civitai-downloader-tab" data-tab="search">Search</button>
           <button class="civitai-downloader-tab" data-tab="status">Status <span id="civitai-status-indicator" style="display: none;">(<span id="civitai-active-count">0</span>)</span></button>
           <button class="civitai-downloader-tab" data-tab="settings">Settings</button>
         </div>
-        <div id="civitai-tab-download" class="civitai-downloader-tab-content active">
-          <form id="civitai-download-form">
-            <div class="civitai-form-group">
-              <label for="civitai-model-url">Model URL or ID</label>
-              <input type="text" id="civitai-model-url" class="civitai-input" placeholder="e.g., https://civitai.com/models/12345 or 12345" required>
+        <div id="civitai-tab-library" class="civitai-downloader-tab-content active">
+          <div class="civitai-library-controls">
+            <input type="text" id="civitai-library-search" class="civitai-input" placeholder="Filter downloaded models...">
+            <div class="civitai-library-control-actions">
+              <span id="civitai-library-count" class="civitai-library-count">0 models</span>
+              <button type="button" id="civitai-library-refresh" class="civitai-button small"><i class="fas fa-sync-alt"></i> Refresh</button>
             </div>
-            <p style="font-size: 0.9em; color: #ccc; margin-top: -10px; margin-bottom: 15px;">You can optionally specify a version ID using "?modelVersionId=xxxxx" in the URL or in the field below.</p>
-            <div class="civitai-form-row">
-              <div class="civitai-form-group">
-                <label for="civitai-model-type">Model Type (Save Location)</label>
-                <div style="display:flex; gap:6px; align-items:center;">
-                  <select id="civitai-model-type" class="civitai-select" required></select>
-                  <button type="button" id="civitai-create-model-type" class="civitai-button small" title="Create new model type folder"><i class="fas fa-folder-plus"></i></button>
-                </div>
-              </div>
-              <div class="civitai-form-group">
-                <label for="civitai-subdir-select">Save Subfolder</label>
-                <div style="display:flex; gap:6px; align-items:center;">
-                  <select id="civitai-subdir-select" class="civitai-select">
-                    <option value="">(root)</option>
-                  </select>
-                  <button type="button" id="civitai-create-subdir" class="civitai-button small" title="Create new subfolder"><i class="fas fa-folder-plus"></i></button>
-                </div>
-              </div>
-              <div class="civitai-form-group">
-                <label for="civitai-model-version-id">Version ID (Optional)</label>
-                <input type="number" id="civitai-model-version-id" class="civitai-input" placeholder="Overrides URL/Latest">
-              </div>
-            </div>
-            <div class="civitai-form-row">
-              <div class="civitai-form-group">
-                <label for="civitai-custom-filename">Custom Filename (Optional)</label>
-                <input type="text" id="civitai-custom-filename" class="civitai-input" placeholder="Leave blank to use original name">
-              </div>
-              <div class="civitai-form-group">
-                <label for="civitai-connections">Connections</label>
-                <input type="number" id="civitai-connections" class="civitai-input" value="${numConnections}" min="1" max="16" step="1" required disabled>
-                <p style="font-size: 0.9em; color: #ccc; margin-top: 7px; margin-bottom: 15px;">Disabled: Only single connection possible for now</p>
-              </div>
-            </div>
-            <div class="civitai-form-group inline">
-              <input type="checkbox" id="civitai-force-redownload" class="civitai-checkbox">
-              <label for="civitai-force-redownload">Force Re-download (if exists)</label>
-            </div>
-            <div id="civitai-download-preview-area" class="civitai-download-preview-area" style="margin-top: 25px; margin-bottom: 25px; padding-top: 15px; border-top: 1px solid var(--border-color, #444);">
-              <!-- Preview content will be injected here -->
-            </div>
-            <button type="submit" id="civitai-download-submit" class="civitai-button primary">Start Download</button>
-          </form>
+          </div>
+          <div id="civitai-library-list" class="civitai-library-list">
+            <p class="civitai-library-empty">No downloaded models yet. Queue downloads from the Search tab.</p>
+          </div>
         </div>
         <div id="civitai-tab-search" class="civitai-downloader-tab-content">
           <form id="civitai-search-form">

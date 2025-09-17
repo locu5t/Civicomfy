@@ -897,3 +897,129 @@
     border-color: rgba(21, 101, 192, 0.55);
     box-shadow: 0 0 0 1px rgba(21, 101, 192, 0.35);
 }
+
+/* Library tab */
+.civitai-library-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.civitai-library-control-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.civitai-library-count {
+    font-size: 0.95em;
+    color: #bbb;
+}
+
+.civitai-library-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.civitai-library-item {
+    display: flex;
+    gap: 16px;
+    align-items: stretch;
+    padding: 14px;
+    border: 1px solid var(--border-color, #444);
+    border-radius: 8px;
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.civitai-library-item.missing {
+    border-color: rgba(255, 107, 107, 0.6);
+    background-color: rgba(255, 107, 107, 0.08);
+}
+
+.civitai-library-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.civitai-library-title {
+    font-size: 1.1em;
+    font-weight: 600;
+}
+
+.civitai-library-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 0.9em;
+    color: #bbb;
+}
+
+.civitai-library-status {
+    font-weight: 600;
+}
+
+.civitai-library-status.status-ok {
+    color: #7fd27f;
+}
+
+.civitai-library-status.status-missing {
+    color: #ff6b6b;
+}
+
+.civitai-library-path {
+    font-family: var(--comfy-code-font, monospace);
+    font-size: 0.85em;
+    color: #ccc;
+    word-break: break-word;
+}
+
+.civitai-library-date {
+    font-size: 0.85em;
+    color: #aaa;
+}
+
+.civitai-library-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.civitai-library-pill {
+    background-color: rgba(92, 138, 255, 0.15);
+    border: 1px solid rgba(92, 138, 255, 0.4);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.civitai-library-pill:hover {
+    background-color: rgba(92, 138, 255, 0.3);
+    border-color: rgba(92, 138, 255, 0.8);
+}
+
+.civitai-library-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: center;
+}
+
+.civitai-library-actions .civitai-button.small {
+    min-width: 36px;
+}
+
+.civitai-library-empty {
+    color: #bbb;
+    text-align: center;
+    padding: 24px 12px;
+    border: 1px dashed var(--border-color, #444);
+    border-radius: 8px;
+}
