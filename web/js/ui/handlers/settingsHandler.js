@@ -70,12 +70,6 @@ export function applySettings(ui) {
         const val = Number(ui.settings.nsfwBlurMinLevel);
         ui.settingsNsfwThresholdInput.value = Number.isFinite(val) ? val : 4;
     }
-    if (ui.downloadConnectionsInput) {
-        ui.downloadConnectionsInput.value = Math.max(1, Math.min(16, ui.settings.numConnections || 1));
-    }
-    if (ui.downloadModelTypeSelect && Object.keys(ui.modelTypes).length > 0) {
-        ui.downloadModelTypeSelect.value = ui.settings.defaultModelType || 'checkpoint';
-    }
     ui.searchPagination.limit = ui.settings.searchResultLimit || 20;
 
     if (typeof ui.updateMergedUIState === 'function') {

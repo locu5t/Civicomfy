@@ -1,4 +1,3 @@
-import { CivitaiDownloaderAPI } from "../../api/civitai.js";
 export function setupEventListeners(ui) {
     // Modal close
     ui.closeButton.addEventListener('click', () => ui.closeModal());
@@ -13,54 +12,44 @@ export function setupEventListeners(ui) {
         }
     });
 
-    // --- FORMS ---
-    ui.downloadForm.addEventListener('submit', (event) => {
-        event.preventDefault();
-        ui.handleDownloadSubmit();
-    });
+    // --- Library interactions ---
+    if (ui.librarySearchInput) {
+        ui.librarySearchInput.addEventListener('input', () => {
+            if (ui.librarySearchTimeout) clearTimeout(ui.librarySearchTimeout);
+            ui.librarySearchTimeout = setTimeout(() => ui.applyLibraryFilter(), 180);
+        });
+    }
 
-    // Change of model type should refresh subdir list
-    ui.downloadModelTypeSelect.addEventListener('change', async () => {
-        await ui.loadAndPopulateSubdirs(ui.downloadModelTypeSelect.value);
-    });
+    if (ui.libraryRefreshButton) {
+        ui.libraryRefreshButton.addEventListener('click', () => ui.loadLibraryItems(true));
+    }
 
-    // Create new model type folder (first-level under models/)
-    ui.createModelTypeButton.addEventListener('click', async () => {
-        const name = prompt('Enter new model type folder name (will be created under models/)');
-        if (!name) return;
-        try {
-            const res = await CivitaiDownloaderAPI.createModelType(name);
-            if (res && res.success) {
-                await ui.populateModelTypes();
-                ui.downloadModelTypeSelect.value = res.name;
-                await ui.loadAndPopulateSubdirs(res.name);
-                ui.showToast(`Created model type folder: ${res.name}`, 'success');
-            } else {
-                ui.showToast(res?.error || 'Failed to create model type folder', 'error');
+    if (ui.libraryListContainer) {
+        ui.libraryListContainer.addEventListener('click', async (event) => {
+            const pill = event.target.closest('.civitai-library-pill');
+            if (pill) {
+                const text = pill.textContent || '';
+                if (text) {
+                    try {
+                        await navigator.clipboard.writeText(text);
+                        ui.showToast(`${text} copied`, 'success');
+                    } catch (err) {
+                        ui.showToast('Failed to copy trigger', 'error');
+                    }
+                }
+                return;
             }
-        } catch (e) {
-            ui.showToast(e.details || e.message || 'Error creating model type folder', 'error');
-        }
-    });
 
-    // Create new subfolder under current model type
-    ui.createSubdirButton.addEventListener('click', async () => {
-        const type = ui.downloadModelTypeSelect.value;
-        const name = prompt('Enter new subfolder name (you can include nested paths like A/B):');
-        if (!name) return;
-        try {
-            const res = await CivitaiDownloaderAPI.createModelDir(type, name);
-            if (res && res.success) {
-                await ui.loadAndPopulateSubdirs(type);
-                if (ui.subdirSelect) ui.subdirSelect.value = res.created || '';
-                ui.showToast(`Created folder: ${res.created}`, 'success');
-            } else {
-                ui.showToast(res?.error || 'Failed to create folder', 'error');
+            const button = event.target.closest('button');
+            if (!button) return;
+            const downloadId = button.dataset.id;
+            if (button.classList.contains('civitai-library-open')) {
+                ui.handleOpenPath(downloadId, button);
+            } else if (button.classList.contains('civitai-library-delete')) {
+                await ui.handleDeleteLibraryItem(downloadId, button);
             }
-        } catch (e) {
-            ui.showToast(e.details || e.message || 'Error creating folder', 'error');
-        }
-    });
+        });
+    }
 
     ui.searchForm.addEventListener('submit', (event) => {
         event.preventDefault();
@@ -78,11 +67,6 @@ export function setupEventListeners(ui) {
         event.preventDefault();
         ui.handleSettingsSave();
     });
-
-    // Download form inputs
-    ui.modelUrlInput.addEventListener('input', () => ui.debounceFetchDownloadPreview());
-    ui.modelUrlInput.addEventListener('paste', () => ui.debounceFetchDownloadPreview(0));
-    ui.modelVersionIdInput.addEventListener('blur', () => ui.fetchAndDisplayDownloadPreview());
 
     // --- DYNAMIC CONTENT LISTENERS (Event Delegation) ---
 
@@ -125,32 +109,6 @@ export function setupEventListeners(ui) {
         }
     });
 
-    // Download preview click-to-toggle blur
-    ui.downloadPreviewArea.addEventListener('click', (event) => {
-        const thumbContainer = event.target.closest('.civitai-thumbnail-container');
-        if (thumbContainer) {
-            const nsfwLevel = Number(thumbContainer.dataset.nsfwLevel ?? thumbContainer.getAttribute('data-nsfw-level'));
-            const threshold = Number(ui.settings?.nsfwBlurMinLevel ?? 4);
-            const enabled = ui.settings?.hideMatureInSearch === true;
-            if (enabled && Number.isFinite(nsfwLevel) && nsfwLevel >= threshold) {
-                if (thumbContainer.classList.contains('blurred')) {
-                    thumbContainer.classList.remove('blurred');
-                    const overlay = thumbContainer.querySelector('.civitai-nsfw-overlay');
-                    if (overlay) overlay.remove();
-                } else {
-                    thumbContainer.classList.add('blurred');
-                    if (!thumbContainer.querySelector('.civitai-nsfw-overlay')) {
-                        const ov = document.createElement('div');
-                        ov.className = 'civitai-nsfw-overlay';
-                        ov.title = 'R-rated: click to reveal';
-                        ov.textContent = 'R';
-                        thumbContainer.appendChild(ov);
-                    }
-                }
-            }
-        }
-    });
-
     // Search results actions, including click-to-toggle blur
     ui.searchResultsContainer.addEventListener('click', (event) => {
         if (ui.settings?.mergedSearchDownloadUI) {
@@ -178,28 +136,6 @@ export function setupEventListeners(ui) {
                 }
                 return; // Don't trigger other actions on this click
             }
-        }
-
-        const downloadButton = event.target.closest('.civitai-search-download-button');
-        if (downloadButton) {
-            event.preventDefault();
-            const { modelId, versionId, modelType } = downloadButton.dataset;
-            if (!modelId || !versionId) {
-                ui.showToast("Error: Missing data for download.", "error");
-                return;
-            }
-            const modelTypeInternalKey = Object.keys(ui.modelTypes).find(key => ui.modelTypes[key]?.toLowerCase() === modelType?.toLowerCase()) || ui.settings.defaultModelType;
-
-            ui.modelUrlInput.value = modelId;
-            ui.modelVersionIdInput.value = versionId;
-            ui.customFilenameInput.value = '';
-            ui.forceRedownloadCheckbox.checked = false;
-            ui.downloadModelTypeSelect.value = modelTypeInternalKey;
-
-            ui.switchTab('download');
-            ui.showToast(`Filled download form for Model ID ${modelId}.`, 'info', 4000);
-            ui.fetchAndDisplayDownloadPreview();
-            return;
         }
 
         const viewAllButton = event.target.closest('.show-all-versions-button');

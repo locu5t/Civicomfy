@@ -43,6 +43,8 @@ export async function updateStatus(ui) {
             ui.renderDownloadList(ui.statusData.active, ui.activeListContainer, 'No active downloads.');
             ui.renderDownloadList(ui.statusData.queue, ui.queuedListContainer, 'Download queue is empty.');
             ui.renderDownloadList(ui.statusData.history, ui.historyListContainer, 'No download history yet.');
+        } else if (ui.activeTab === 'library') {
+            ui.loadLibraryItems(false);
         }
     } catch (error) {
         console.error("[Civicomfy] Failed to update status:", error);

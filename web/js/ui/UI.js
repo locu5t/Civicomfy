@@ -1,12 +1,11 @@
 import { Feedback } from "./feedback.js";
 import { setupEventListeners } from "./handlers/eventListeners.js";
-import { handleDownloadSubmit, fetchAndDisplayDownloadPreview, debounceFetchDownloadPreview } from "./handlers/downloadHandler.js";
 import { handleSearchSubmit, initSearchHandlers } from "./handlers/searchHandler.js";
 import { handleSettingsSave, loadAndApplySettings, loadSettingsFromCookie, saveSettingsToCookie, applySettings, getDefaultSettings } from "./handlers/settingsHandler.js";
 import { startStatusUpdates, stopStatusUpdates, updateStatus, handleCancelDownload, handleRetryDownload, handleOpenPath, handleClearHistory } from "./handlers/statusHandler.js";
 import { renderSearchResults as renderSearchCards } from "./searchRenderer.js";
 import { renderDownloadList } from "./statusRenderer.js";
-import { renderDownloadPreview } from "./previewRenderer.js";
+import { renderLibraryList } from "./libraryRenderer.js";
 import { modalTemplate } from "./templates.js";
 import { CivitaiDownloaderAPI } from "../api/civitai.js";
 
@@ -15,7 +14,7 @@ export class CivitaiDownloaderUI {
         this.modal = null;
         this.tabs = {};
         this.tabContents = {};
-        this.activeTab = 'download';
+        this.activeTab = 'library';
         this.modelTypes = {};
         this.statusInterval = null;
         this.statusData = { queue: [], active: [], history: [] };
@@ -23,7 +22,10 @@ export class CivitaiDownloaderUI {
         this.searchPagination = { currentPage: 1, totalPages: 1, limit: 20 };
         this.settings = this.getDefaultSettings();
         this.toastTimeout = null;
-        this.modelPreviewDebounceTimeout = null;
+        this.libraryItems = [];
+        this.libraryLoaded = false;
+        this.libraryLoading = false;
+        this.librarySearchTimeout = null;
 
         this.updateStatus();
         this.buildModalHTML();
@@ -47,19 +49,12 @@ export class CivitaiDownloaderUI {
         this.closeButton = this.modal.querySelector('#civitai-close-modal');
         this.tabContainer = this.modal.querySelector('.civitai-downloader-tabs');
 
-        // Download Tab
-        this.downloadForm = this.modal.querySelector('#civitai-download-form');
-        this.downloadPreviewArea = this.modal.querySelector('#civitai-download-preview-area');
-        this.modelUrlInput = this.modal.querySelector('#civitai-model-url');
-        this.modelVersionIdInput = this.modal.querySelector('#civitai-model-version-id');
-        this.downloadModelTypeSelect = this.modal.querySelector('#civitai-model-type');
-        this.createModelTypeButton = this.modal.querySelector('#civitai-create-model-type');
-        this.customFilenameInput = this.modal.querySelector('#civitai-custom-filename');
-        this.subdirSelect = this.modal.querySelector('#civitai-subdir-select');
-        this.createSubdirButton = this.modal.querySelector('#civitai-create-subdir');
-        this.downloadConnectionsInput = this.modal.querySelector('#civitai-connections');
-        this.forceRedownloadCheckbox = this.modal.querySelector('#civitai-force-redownload');
-        this.downloadSubmitButton = this.modal.querySelector('#civitai-download-submit');
+        // Library Tab
+        this.libraryContent = this.modal.querySelector('#civitai-tab-library');
+        this.libraryListContainer = this.modal.querySelector('#civitai-library-list');
+        this.librarySearchInput = this.modal.querySelector('#civitai-library-search');
+        this.libraryRefreshButton = this.modal.querySelector('#civitai-library-refresh');
+        this.libraryCountLabel = this.modal.querySelector('#civitai-library-count');
 
         // Search Tab
         this.searchForm = this.modal.querySelector('#civitai-search-form');
@@ -115,6 +110,7 @@ export class CivitaiDownloaderUI {
         await this.populateModelTypes();
         await this.populateBaseModels();
         this.loadAndApplySettings();
+        await this.loadLibraryItems(true);
     }
 
     async populateModelTypes() {
@@ -127,7 +123,6 @@ export class CivitaiDownloaderUI {
             this.modelTypes = types;
             const sortedTypes = Object.entries(this.modelTypes).sort((a, b) => a[1].localeCompare(b[1]));
 
-            this.downloadModelTypeSelect.innerHTML = '';
             this.searchTypeSelect.innerHTML = '<option value="any">Any Type</option>';
             this.settingsDefaultTypeSelect.innerHTML = '';
 
@@ -135,49 +130,15 @@ export class CivitaiDownloaderUI {
                 const option = document.createElement('option');
                 option.value = key;
                 option.textContent = displayName;
-            this.downloadModelTypeSelect.appendChild(option.cloneNode(true));
-            this.settingsDefaultTypeSelect.appendChild(option.cloneNode(true));
-            this.searchTypeSelect.appendChild(option.cloneNode(true));
-        });
-        // After types are populated, load subdirs for the current selection
-        await this.loadAndPopulateSubdirs(this.downloadModelTypeSelect.value);
+                this.settingsDefaultTypeSelect.appendChild(option.cloneNode(true));
+                this.searchTypeSelect.appendChild(option.cloneNode(true));
+            });
         } catch (error) {
             console.error("[Civicomfy] Failed to get or populate model types:", error);
             this.showToast('Failed to load model types', 'error');
-            this.downloadModelTypeSelect.innerHTML = '<option value="checkpoint">Checkpoint (Default)</option>';
+            this.searchTypeSelect.innerHTML = '<option value="any">Any Type</option><option value="checkpoint">Checkpoint (Default)</option>';
+            this.settingsDefaultTypeSelect.innerHTML = '<option value="checkpoint">Checkpoint (Default)</option>';
             this.modelTypes = { "checkpoint": "Checkpoint (Default)" };
-        }
-    }
-
-    async loadAndPopulateSubdirs(modelType) {
-        try {
-            const res = await CivitaiDownloaderAPI.getModelDirs(modelType);
-            const select = this.subdirSelect;
-            if (!select) return;
-            const current = select.value;
-            select.innerHTML = '';
-            const optRoot = document.createElement('option');
-            optRoot.value = '';
-            optRoot.textContent = '(root)';
-            select.appendChild(optRoot);
-            if (res && Array.isArray(res.subdirs)) {
-                // res.subdirs contains '' for root; skip empty since we added (root)
-                res.subdirs.filter(p => p && typeof p === 'string').forEach(rel => {
-                    const opt = document.createElement('option');
-                    opt.value = rel;
-                    opt.textContent = rel;
-                    select.appendChild(opt);
-                });
-            }
-            // Restore selection if still present
-            if (Array.from(select.options).some(o => o.value === current)) {
-                select.value = current;
-            }
-        } catch (e) {
-            console.error('[Civicomfy] Failed to load subdirectories:', e);
-            if (this.subdirSelect) {
-                this.subdirSelect.innerHTML = '<option value="">(root)</option>';
-            }
         }
     }
 
@@ -216,12 +177,15 @@ export class CivitaiDownloaderUI {
         this.tabContents[tabId].scrollTop = 0;
         this.activeTab = tabId;
 
-        if (tabId === 'status') this.updateStatus();
-        else if (tabId === 'settings') this.applySettings();
-        else if(tabId === 'download') {
-            this.downloadConnectionsInput.value = this.settings.numConnections;
-            if (Object.keys(this.modelTypes).length > 0) {
-                this.downloadModelTypeSelect.value = this.settings.defaultModelType;
+        if (tabId === 'status') {
+            this.updateStatus();
+        } else if (tabId === 'settings') {
+            this.applySettings();
+        } else if (tabId === 'library') {
+            if (this.libraryLoaded) {
+                this.applyLibraryFilter();
+            } else {
+                this.loadLibraryItems(true);
             }
         }
     }
@@ -232,6 +196,7 @@ export class CivitaiDownloaderUI {
         document.body.style.setProperty('overflow', 'hidden', 'important');
         this.startStatusUpdates();
         if (this.activeTab === 'status') this.updateStatus();
+        if (this.activeTab === 'library') this.loadLibraryItems(!this.libraryLoaded);
         if (!this.settings.apiKey) this.switchTab('settings');
     }
 
@@ -294,6 +259,7 @@ export class CivitaiDownloaderUI {
             },
             inferModelType: (type) => this.inferFolderFromCivitaiType(type),
             onQueueSuccess: () => {
+                this.libraryLoaded = false;
                 if (this.settings.autoOpenStatusTab) {
                     this.switchTab('status');
                 } else {
@@ -302,6 +268,113 @@ export class CivitaiDownloaderUI {
             },
             onRequireApiKey: () => this.switchTab('settings'),
         });
+    }
+
+    async loadLibraryItems(showLoading = false) {
+        if (!this.libraryListContainer) return;
+        if (this.libraryLoading) return;
+        this.libraryLoading = true;
+
+        if (showLoading) {
+            this.libraryListContainer.innerHTML = '<p><i class="fas fa-spinner fa-spin"></i> Loading library...</p>';
+            this.ensureFontAwesome();
+        }
+
+        try {
+            const response = await CivitaiDownloaderAPI.getLibrary();
+            if (!response || !Array.isArray(response.items)) {
+                throw new Error('Invalid library response');
+            }
+            this.libraryItems = response.items.filter(item => item && item.deleted !== true);
+            this.libraryLoaded = true;
+            this.applyLibraryFilter();
+        } catch (error) {
+            const message = error.details || error.message || 'Failed to load library.';
+            console.error('[Civicomfy] Failed to load library:', error);
+            if (this.libraryListContainer) {
+                this.libraryListContainer.innerHTML = `<p style="color: var(--error-text, #ff6b6b);">${message}</p>`;
+            }
+            this.libraryItems = [];
+            this.updateLibraryCount(0);
+            this.showToast(message, 'error', 5000);
+        } finally {
+            this.libraryLoading = false;
+        }
+    }
+
+    applyLibraryFilter() {
+        if (!Array.isArray(this.libraryItems)) {
+            this.renderLibraryList([]);
+            this.updateLibraryCount(0);
+            return;
+        }
+        const query = (this.librarySearchInput?.value || '').trim().toLowerCase();
+        let filtered = this.libraryItems;
+        if (query) {
+            filtered = this.libraryItems.filter(item => {
+                const fields = [
+                    item?.model_name,
+                    item?.version_name,
+                    item?.filename,
+                    item?.model_type,
+                    item?.path,
+                ];
+                if (Array.isArray(item?.trained_words)) fields.push(...item.trained_words);
+                if (Array.isArray(item?.tags)) fields.push(...item.tags);
+                return fields.some(field => typeof field === 'string' && field.toLowerCase().includes(query));
+            });
+        }
+        this.renderLibraryList(filtered);
+        this.updateLibraryCount(filtered.length);
+    }
+
+    updateLibraryCount(count) {
+        if (!this.libraryCountLabel) return;
+        const total = Array.isArray(this.libraryItems) ? this.libraryItems.length : 0;
+        const suffix = count === 1 ? 'model' : 'models';
+        if (total > 0 && count !== total) {
+            this.libraryCountLabel.textContent = `${count.toLocaleString()} ${suffix} of ${total.toLocaleString()}`;
+        } else {
+            this.libraryCountLabel.textContent = `${count.toLocaleString()} ${suffix}`;
+        }
+    }
+
+    async handleDeleteLibraryItem(downloadId, button) {
+        if (!downloadId) return;
+        if (!window.confirm('Delete this model from disk? This action cannot be undone.')) {
+            return;
+        }
+
+        const originalIcon = button?.innerHTML;
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        try {
+            const result = await CivitaiDownloaderAPI.deleteLibraryItem(downloadId);
+            if (result?.success) {
+                this.showToast(result.message || 'Model removed from disk.', 'success');
+                this.libraryItems = Array.isArray(this.libraryItems)
+                    ? this.libraryItems.filter(item => item && item.id !== downloadId)
+                    : [];
+                this.applyLibraryFilter();
+                this.libraryLoaded = true;
+                this.updateStatus();
+            } else {
+                const message = result?.error || 'Failed to delete model.';
+                this.showToast(message, 'error', 5000);
+            }
+        } catch (error) {
+            const message = error.details || error.message || 'Failed to delete model.';
+            console.error('[Civicomfy] Delete library item failed:', error);
+            this.showToast(message, 'error', 5000);
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = originalIcon || '<i class="fas fa-trash-alt"></i>';
+            }
+        }
     }
 
     updateMergedUIState() {
@@ -336,7 +409,7 @@ export class CivitaiDownloaderUI {
         const mapped = Array.isArray(items) ? items.map((item) => this.transformSearchHit(item)).filter(Boolean) : [];
         renderSearchCards(this.searchResultsContainer, mapped);
     };
-    renderDownloadPreview = (data) => renderDownloadPreview(this, data);
+    renderLibraryList = (items) => renderLibraryList(this, items);
 
     // --- Auto-select model type based on Civitai model type ---
     inferFolderFromCivitaiType(civitaiType) {
@@ -443,21 +516,6 @@ export class CivitaiDownloaderUI {
         };
     }
 
-    async autoSelectModelTypeFromCivitai(civitaiType) {
-        try {
-            const folder = this.inferFolderFromCivitaiType(civitaiType);
-            if (!folder) return;
-            if (this.downloadModelTypeSelect && this.downloadModelTypeSelect.value !== folder) {
-                this.downloadModelTypeSelect.value = folder;
-                await this.loadAndPopulateSubdirs(folder);
-                // Reset subdir to root after auto-switch
-                if (this.subdirSelect) this.subdirSelect.value = '';
-            }
-        } catch (e) {
-            console.warn('[Civicomfy] Auto-select model type failed:', e);
-        }
-    }
-
     renderSearchPagination(metadata) {
         if (!this.searchPaginationContainer) return;
         if (!metadata || metadata.totalPages <= 1) {
@@ -514,10 +572,7 @@ export class CivitaiDownloaderUI {
     saveSettingsToCookie = () => saveSettingsToCookie(this);
     applySettings = () => applySettings(this);
     handleSettingsSave = () => handleSettingsSave(this);
-    handleDownloadSubmit = () => handleDownloadSubmit(this);
     handleSearchSubmit = () => handleSearchSubmit(this);
-    fetchAndDisplayDownloadPreview = () => fetchAndDisplayDownloadPreview(this);
-    debounceFetchDownloadPreview = (delay) => debounceFetchDownloadPreview(this, delay);
     startStatusUpdates = () => startStatusUpdates(this);
     stopStatusUpdates = () => stopStatusUpdates(this);
     updateStatus = () => updateStatus(this);

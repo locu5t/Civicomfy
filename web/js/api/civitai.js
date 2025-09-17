@@ -111,6 +111,18 @@ export class CivitaiDownloaderAPI {
     return await this._request(`/civitai/model_dirs?type=${q}`);
   }
 
+  static async getLibrary() {
+    return await this._request("/civitai/library");
+  }
+
+  static async deleteLibraryItem(downloadId) {
+    return await this._request("/civitai/library/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ download_id: downloadId }),
+    });
+  }
+
   static async createModelDir(modelType, newDir) {
     return await this._request("/civitai/create_dir", {
       method: "POST",

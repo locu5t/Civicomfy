@@ -13,9 +13,11 @@ from . import GetBaseModels
 from . import GetModelDetails
 from . import GetModelTypes
 from . import GetModelDirs
+from . import GetLibrary
 from . import GetStatus
 from . import OpenPath
 from . import RetryDownload
 from . import SearchModels
+from . import DeleteLibraryItem
 
 print("[Civicomfy] All server route modules loaded.")
