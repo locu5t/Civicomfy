@@ -69,7 +69,7 @@ export function modalTemplate(settings = {}) {
         <div id="civitai-tab-search" class="civitai-downloader-tab-content">
           <form id="civitai-search-form">
             <div class="civitai-search-controls">
-              <input type="text" id="civitai-search-query" class="civitai-input" placeholder="Search Civitai...">
+              <input type="text" id="civitai-search-query" class="civitai-input" placeholder="Search Civitai or paste a Model URL/ID...">
               <select id="civitai-search-type" class="civitai-select">
                 <option value="any">Any Type</option>
               </select>
