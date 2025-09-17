@@ -11,6 +11,7 @@ export function getDefaultSettings() {
         searchResultLimit: 20,
         hideMatureInSearch: true,
         nsfwBlurMinLevel: 4, // Blur thumbnails with nsfwLevel >= this value
+        mergedSearchDownloadUI: false,
     };
 }
 
@@ -62,6 +63,9 @@ export function applySettings(ui) {
     if (ui.settingsHideMatureCheckbox) {
         ui.settingsHideMatureCheckbox.checked = ui.settings.hideMatureInSearch === true;
     }
+    if (ui.settingsMergedUiCheckbox) {
+        ui.settingsMergedUiCheckbox.checked = ui.settings.mergedSearchDownloadUI === true;
+    }
     if (ui.settingsNsfwThresholdInput) {
         const val = Number(ui.settings.nsfwBlurMinLevel);
         ui.settingsNsfwThresholdInput.value = Number.isFinite(val) ? val : 4;
@@ -73,6 +77,10 @@ export function applySettings(ui) {
         ui.downloadModelTypeSelect.value = ui.settings.defaultModelType || 'checkpoint';
     }
     ui.searchPagination.limit = ui.settings.searchResultLimit || 20;
+
+    if (typeof ui.updateMergedUIState === 'function') {
+        ui.updateMergedUIState();
+    }
 }
 
 export function handleSettingsSave(ui) {
@@ -81,6 +89,7 @@ export function handleSettingsSave(ui) {
     const defaultModelType = ui.settingsDefaultTypeSelect.value;
     const autoOpenStatusTab = ui.settingsAutoOpenCheckbox.checked;
     const hideMatureInSearch = ui.settingsHideMatureCheckbox.checked;
+    const mergedSearchDownloadUI = ui.settingsMergedUiCheckbox?.checked === true;
     const nsfwBlurMinLevel = Number(ui.settingsNsfwThresholdInput.value);
 
     if (isNaN(numConnections) || numConnections < 1 || numConnections > 16) {
@@ -98,6 +107,7 @@ export function handleSettingsSave(ui) {
     ui.settings.autoOpenStatusTab = autoOpenStatusTab;
     ui.settings.hideMatureInSearch = hideMatureInSearch;
     ui.settings.nsfwBlurMinLevel = (Number.isFinite(nsfwBlurMinLevel) && nsfwBlurMinLevel >= 0) ? Math.min(128, Math.round(nsfwBlurMinLevel)) : 4;
+    ui.settings.mergedSearchDownloadUI = mergedSearchDownloadUI;
 
     ui.saveSettingsToCookie();
     ui.applySettings();

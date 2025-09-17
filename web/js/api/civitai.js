@@ -49,6 +49,27 @@ export class CivitaiDownloaderAPI {
     });
   }
 
+  static async queueDownload(payload) {
+    // Alias of downloadModel to keep terminology aligned with queue-based UI.
+    return await this.downloadModel(payload);
+  }
+
+  static async queueDownloads(items = []) {
+    const results = [];
+    for (const item of items) {
+      try {
+        const res = await this.queueDownload(item);
+        results.push(res);
+      } catch (error) {
+        results.push({
+          error: error?.details || error?.message || "queueDownload failed",
+          item,
+        });
+      }
+    }
+    return results;
+  }
+
   static async getModelDetails(params) {
     return await this._request("/civitai/get_model_details", {
       method: "POST",
