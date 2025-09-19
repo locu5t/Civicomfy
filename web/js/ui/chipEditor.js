@@ -190,7 +190,19 @@ export function createChipEditor(root, options = {}) {
   });
 
   if (addAllButton) {
-    addAllButton.addEventListener("click", () => {
+    addAllButton.addEventListener("click", async () => {
+      try {
+        if (typeof options.onAddAll === "function") {
+          const handled = await options.onAddAll([...state.source]);
+          if (handled) {
+            updateAddAllState();
+            inputEl.focus();
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn("Chip editor onAddAll handler failed", error);
+      }
       addValues(state.source);
       updateAddAllState();
       inputEl.focus();

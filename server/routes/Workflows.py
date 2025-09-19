@@ -46,6 +46,7 @@ from ...utils.card_meta import (
     load_card_meta,
     save_card_meta,
     sanitize_custom_list,
+    sanitize_prompt_groups,
 )
 
 prompt_server = server.PromptServer.instance
@@ -340,22 +341,34 @@ async def route_update_card_meta(request):
     except Exception as exc:
         return web.json_response({"error": f"Invalid JSON: {exc}"}, status=400)
 
-    tags_raw = (body or {}).get("custom_tags", [])
-    triggers_raw = (body or {}).get("custom_triggers", [])
-    if not isinstance(tags_raw, list) or not isinstance(triggers_raw, list):
-        return web.json_response({"error": "custom_tags and custom_triggers must be arrays"}, status=400)
+    payload = body or {}
+    tags_raw = payload.get("custom_tags", None)
+    triggers_raw = payload.get("custom_triggers", None)
+    groups_raw = payload.get("custom_prompt_groups", None)
 
-    new_tags = sanitize_custom_list(tags_raw)
-    new_triggers = sanitize_custom_list(triggers_raw)
+    if tags_raw is not None and not isinstance(tags_raw, list):
+        return web.json_response({"error": "custom_tags must be an array when provided"}, status=400)
+    if triggers_raw is not None and not isinstance(triggers_raw, list):
+        return web.json_response({"error": "custom_triggers must be an array when provided"}, status=400)
+    if groups_raw is not None and not isinstance(groups_raw, list):
+        return web.json_response({"error": "custom_prompt_groups must be an array when provided"}, status=400)
+
+    new_tags = sanitize_custom_list(tags_raw) if tags_raw is not None else None
+    new_triggers = sanitize_custom_list(triggers_raw) if triggers_raw is not None else None
+    new_groups = sanitize_prompt_groups(groups_raw) if groups_raw is not None else None
 
     meta = _cards_meta()
     info = ensure_card_meta_entry(meta, card_id)
-    changed = (
-        new_tags != info.get("custom_tags", [])
-        or new_triggers != info.get("custom_triggers", [])
-    )
-    info["custom_tags"] = new_tags
-    info["custom_triggers"] = new_triggers
+    changed = False
+    if new_tags is not None and new_tags != info.get("custom_tags", []):
+        changed = True
+        info["custom_tags"] = new_tags
+    if new_triggers is not None and new_triggers != info.get("custom_triggers", []):
+        changed = True
+        info["custom_triggers"] = new_triggers
+    if new_groups is not None and new_groups != info.get("custom_prompt_groups", []):
+        changed = True
+        info["custom_prompt_groups"] = new_groups
     meta["cards"][card_id] = info
     _write_cards_meta(meta)
     return web.json_response({

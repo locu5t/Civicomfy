@@ -9,6 +9,8 @@ import { renderLibraryList } from "./libraryRenderer.js";
 import { modalTemplate } from "./templates.js";
 import { CivitaiDownloaderAPI } from "../api/civitai.js";
 import { createChipEditor } from "./chipEditor.js";
+import { createPromptClipboard } from "./promptClipboard.js";
+import { generatePromptGroupId, sanitizePromptItems } from "../utils/promptClipboard.js";
 
 export class CivitaiDownloaderUI {
     constructor() {
@@ -239,6 +241,20 @@ export class CivitaiDownloaderUI {
         }
     }
 
+    formatPromptGroupTimestamp(isoString) {
+        if (!isoString) return '';
+        try {
+            const date = new Date(isoString);
+            if (Number.isNaN(date.getTime())) return '';
+            return new Intl.DateTimeFormat(undefined, {
+                dateStyle: 'short',
+                timeStyle: 'short',
+            }).format(date);
+        } catch (error) {
+            return '';
+        }
+    }
+
     sanitizeStringList(values) {
         if (!Array.isArray(values)) return [];
         const cleaned = [];
@@ -253,6 +269,194 @@ export class CivitaiDownloaderUI {
             cleaned.push(text);
         });
         return cleaned;
+    }
+
+    sanitizePromptGroups(groups) {
+        if (!Array.isArray(groups)) return [];
+        const cleaned = [];
+        const seen = new Set();
+        groups.forEach((group) => {
+            if (!group || typeof group !== 'object') return;
+            const id = String(group.id || group.group_id || '').trim();
+            if (!id || seen.has(id)) return;
+            const name = String(group.name ?? '').trim() || 'Prompt group';
+            const items = sanitizePromptItems(group.items ?? [], 256);
+            if (items.length === 0) return;
+            const addedAt = typeof group.added_at === 'string' ? group.added_at : '';
+            const updatedAt = typeof group.updated_at === 'string' ? group.updated_at : '';
+            cleaned.push({ id, name, items, added_at: addedAt, updated_at: updatedAt });
+            seen.add(id);
+        });
+        return cleaned;
+    }
+
+    async handleAddAllToClipboard(kind, values) {
+        const drawer = this.cardMetaDrawer;
+        if (!drawer || !drawer.clipboard) return false;
+        const sanitized = this.sanitizeStringList(values);
+        if (sanitized.length === 0) {
+            this.showToast(`No ${kind === 'tags' ? 'tags' : 'triggers'} found to add`, 'info');
+            return true;
+        }
+        let action = 'loaded';
+        if (!drawer.clipboard.isEmpty()) {
+            const message = 'Clipboard already has items. Click OK to append or Cancel to overwrite.';
+            const append = window.confirm(message);
+            if (append) {
+                drawer.clipboard.appendItems(sanitized);
+                action = 'appended';
+            } else {
+                drawer.clipboard.setItems(sanitized);
+                action = 'loaded';
+            }
+        } else {
+            drawer.clipboard.setItems(sanitized);
+        }
+        const target = kind === 'tags' ? 'tags' : 'triggers';
+        drawer.clipboard.setTarget(target);
+        drawer.clipboardTarget = target;
+        const label = kind === 'tags' ? 'tag' : 'trigger';
+        this.showToast(
+            `${action.charAt(0).toUpperCase() + action.slice(1)} ${sanitized.length} ${label}${sanitized.length === 1 ? '' : 's'} in clipboard`,
+            'success',
+        );
+        return true;
+    }
+
+    async persistPromptGroups(cardId, groups) {
+        if (!cardId) throw new Error('Missing card id');
+        const payloadGroups = this.sanitizePromptGroups(groups).map((group) => ({
+            id: group.id,
+            name: group.name,
+            items: this.sanitizeStringList(group.items),
+            added_at: group.added_at,
+            updated_at: group.updated_at,
+        }));
+        const response = await CivitaiDownloaderAPI.updateCardMeta(cardId, {
+            custom_prompt_groups: payloadGroups,
+        });
+        if (response?.success === false) {
+            throw new Error(response?.error || 'Failed to update prompt groups');
+        }
+        const savedCard = response?.card || {};
+        return this.sanitizePromptGroups(savedCard.custom_prompt_groups ?? payloadGroups);
+    }
+
+    async handleSavePromptGroup(items) {
+        const drawer = this.cardMetaDrawer;
+        if (!drawer || !drawer.currentCardId) {
+            this.showToast('Open a card before saving prompt groups', 'error');
+            return;
+        }
+        const sanitized = sanitizePromptItems(items ?? [], 256);
+        if (sanitized.length === 0) {
+            this.showToast('Clipboard is empty', 'info');
+            return;
+        }
+        const previewName = sanitized.slice(0, 3).join(', ').slice(0, 60);
+        const suggested = previewName || 'Prompt group';
+        const nameInput = window.prompt('Name for this prompt group:', suggested);
+        if (nameInput === null) return;
+        const name = nameInput.trim();
+        if (!name) {
+            this.showToast('Prompt group name cannot be empty', 'error');
+            return;
+        }
+        const nowIso = new Date().toISOString();
+        const groups = Array.isArray(drawer.promptGroups) ? [...drawer.promptGroups] : [];
+        groups.unshift({
+            id: generatePromptGroupId('pg'),
+            name,
+            items: sanitized,
+            added_at: nowIso,
+            updated_at: nowIso,
+        });
+        try {
+            const saved = await this.persistPromptGroups(drawer.currentCardId, groups);
+            drawer.promptGroups = saved;
+            drawer.renderPromptGroups?.();
+            this.updateLibraryCardMeta(
+                drawer.currentCardId,
+                drawer.tagsEditor.getValues(),
+                drawer.triggersEditor.getValues(),
+                saved,
+            );
+            if (drawer.currentItem) {
+                drawer.currentItem.custom_prompt_groups = saved.slice();
+            }
+            this.showToast(`Saved prompt group "${name}"`, 'success');
+        } catch (error) {
+            console.error('[Civicomfy] Failed to save prompt group', error);
+            this.showToast(error?.message || 'Failed to save prompt group', 'error', 5000);
+        }
+    }
+
+    async renamePromptGroup(groupId) {
+        const drawer = this.cardMetaDrawer;
+        if (!drawer || !drawer.currentCardId) return;
+        const groups = Array.isArray(drawer.promptGroups) ? [...drawer.promptGroups] : [];
+        const index = groups.findIndex((group) => group.id === groupId);
+        if (index === -1) return;
+        const current = groups[index];
+        const nameInput = window.prompt('Rename prompt group:', current.name);
+        if (nameInput === null) return;
+        const name = nameInput.trim();
+        if (!name) {
+            this.showToast('Prompt group name cannot be empty', 'error');
+            return;
+        }
+        groups[index] = {
+            ...current,
+            name,
+            updated_at: new Date().toISOString(),
+        };
+        try {
+            const saved = await this.persistPromptGroups(drawer.currentCardId, groups);
+            drawer.promptGroups = saved;
+            drawer.renderPromptGroups?.();
+            this.updateLibraryCardMeta(
+                drawer.currentCardId,
+                drawer.tagsEditor.getValues(),
+                drawer.triggersEditor.getValues(),
+                saved,
+            );
+            if (drawer.currentItem) {
+                drawer.currentItem.custom_prompt_groups = saved.slice();
+            }
+            this.showToast(`Renamed prompt group to "${name}"`, 'success');
+        } catch (error) {
+            console.error('[Civicomfy] Failed to rename prompt group', error);
+            this.showToast(error?.message || 'Failed to rename prompt group', 'error', 5000);
+        }
+    }
+
+    async deletePromptGroup(groupId) {
+        const drawer = this.cardMetaDrawer;
+        if (!drawer || !drawer.currentCardId) return;
+        const groups = Array.isArray(drawer.promptGroups) ? drawer.promptGroups : [];
+        const target = groups.find((group) => group.id === groupId);
+        if (!target) return;
+        const confirmed = window.confirm(`Delete prompt group "${target.name}"? This cannot be undone.`);
+        if (!confirmed) return;
+        const remaining = groups.filter((group) => group.id !== groupId);
+        try {
+            const saved = await this.persistPromptGroups(drawer.currentCardId, remaining);
+            drawer.promptGroups = saved;
+            drawer.renderPromptGroups?.();
+            this.updateLibraryCardMeta(
+                drawer.currentCardId,
+                drawer.tagsEditor.getValues(),
+                drawer.triggersEditor.getValues(),
+                saved,
+            );
+            if (drawer.currentItem) {
+                drawer.currentItem.custom_prompt_groups = saved.slice();
+            }
+            this.showToast(`Deleted prompt group "${target.name}"`, 'success');
+        } catch (error) {
+            console.error('[Civicomfy] Failed to delete prompt group', error);
+            this.showToast(error?.message || 'Failed to delete prompt group', 'error', 5000);
+        }
     }
 
     listsEqualIgnoreCase(a, b) {
@@ -782,6 +986,7 @@ export class CivitaiDownloaderUI {
             helperText: 'Paste comma-separated triggers or press Enter to create a chip.',
             sourceValues: [],
             onChange: () => this.updateCardMetaDrawerState(),
+            onAddAll: (values) => this.handleAddAllToClipboard('triggers', values),
         });
 
         const tagsSection = document.createElement('div');
@@ -795,7 +1000,41 @@ export class CivitaiDownloaderUI {
             helperText: 'Paste comma-separated tags or press Enter to create a chip.',
             sourceValues: [],
             onChange: () => this.updateCardMetaDrawerState(),
+            onAddAll: (values) => this.handleAddAllToClipboard('tags', values),
         });
+
+        const clipboardSection = document.createElement('div');
+        clipboardSection.className = 'civitai-card-meta-section civitai-card-meta-clipboard';
+        const clipboardEditor = createPromptClipboard(clipboardSection, {
+            targets: [
+                { value: 'triggers', label: 'Custom triggers' },
+                { value: 'tags', label: 'Custom tags' },
+            ],
+            onApply: async (items, { target }) => {
+                if (target === 'tags') {
+                    tagsEditor.setValues(items);
+                } else {
+                    triggersEditor.setValues(items);
+                }
+                this.updateCardMetaDrawerState();
+            },
+            onSaveGroup: (items) => this.handleSavePromptGroup(items),
+            onToast: (message, type = 'info', duration = 3000) => this.showToast(message, type, duration),
+            onTargetChange: (value) => {
+                if (this.cardMetaDrawer) this.cardMetaDrawer.clipboardTarget = value;
+            },
+        });
+
+        const promptGroupsSection = document.createElement('div');
+        promptGroupsSection.className = 'civitai-card-meta-section civitai-card-meta-groups';
+        promptGroupsSection.innerHTML = `
+            <div class="civitai-prompt-groups-header">
+                <h4>Prompt groups</h4>
+                <p class="civitai-prompt-groups-helper">Save reusable prompt sets for this card.</p>
+            </div>
+            <ul class="civitai-prompt-groups-list" role="list" aria-live="polite"></ul>
+        `;
+        const promptGroupsList = promptGroupsSection.querySelector('.civitai-prompt-groups-list');
 
         const previewSection = document.createElement('div');
         previewSection.className = 'civitai-card-meta-preview';
@@ -827,7 +1066,86 @@ export class CivitaiDownloaderUI {
 
         body.appendChild(triggersSection);
         body.appendChild(tagsSection);
+        body.appendChild(clipboardSection);
+        body.appendChild(promptGroupsSection);
         body.appendChild(previewSection);
+
+        const renderPromptGroups = () => {
+            if (!promptGroupsList) return;
+            promptGroupsList.innerHTML = '';
+            const drawerState = this.cardMetaDrawer;
+            const groups = Array.isArray(drawerState?.promptGroups) ? drawerState.promptGroups : [];
+            if (groups.length === 0) {
+                const empty = document.createElement('li');
+                empty.className = 'civitai-prompt-group-empty';
+                empty.textContent = 'No prompt groups saved for this card yet.';
+                promptGroupsList.appendChild(empty);
+                return;
+            }
+            groups.forEach((group) => {
+                const item = document.createElement('li');
+                item.className = 'civitai-prompt-group-item';
+                item.dataset.id = group.id;
+
+                const loadButton = document.createElement('button');
+                loadButton.type = 'button';
+                loadButton.className = 'civitai-prompt-group-load';
+                const nameSpan = document.createElement('span');
+                nameSpan.className = 'civitai-prompt-group-name';
+                nameSpan.textContent = group.name;
+                const metaSpan = document.createElement('span');
+                metaSpan.className = 'civitai-prompt-group-meta';
+                const count = group.items?.length || 0;
+                const metaParts = [`${count} ${count === 1 ? 'item' : 'items'}`];
+                const timestamp = this.formatPromptGroupTimestamp(group.updated_at || group.added_at);
+                if (timestamp) metaParts.push(`Updated ${timestamp}`);
+                metaSpan.textContent = metaParts.join(' • ');
+                loadButton.appendChild(nameSpan);
+                loadButton.appendChild(metaSpan);
+                loadButton.addEventListener('click', () => {
+                    clipboardEditor.setItems(group.items);
+                    this.showToast(`Loaded "${group.name}" into clipboard`, 'success');
+                });
+
+                const actions = document.createElement('div');
+                actions.className = 'civitai-prompt-group-actions';
+                const applyBtn = document.createElement('button');
+                applyBtn.type = 'button';
+                applyBtn.className = 'civitai-prompt-group-apply';
+                applyBtn.textContent = 'Apply';
+                applyBtn.addEventListener('click', async (event) => {
+                    event.stopPropagation();
+                    clipboardEditor.setItems(group.items);
+                    await clipboardEditor.apply(group.items);
+                });
+
+                const renameBtn = document.createElement('button');
+                renameBtn.type = 'button';
+                renameBtn.className = 'civitai-prompt-group-rename';
+                renameBtn.textContent = 'Rename';
+                renameBtn.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    this.renamePromptGroup(group.id);
+                });
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.className = 'civitai-prompt-group-delete';
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    this.deletePromptGroup(group.id);
+                });
+
+                actions.appendChild(applyBtn);
+                actions.appendChild(renameBtn);
+                actions.appendChild(deleteBtn);
+
+                item.appendChild(loadButton);
+                item.appendChild(actions);
+                promptGroupsList.appendChild(item);
+            });
+        };
 
         const footer = document.createElement('div');
         footer.className = 'civitai-card-meta-footer';
@@ -868,6 +1186,11 @@ export class CivitaiDownloaderUI {
             cancelButton,
             triggersEditor,
             tagsEditor,
+            clipboard: clipboardEditor,
+            clipboardTarget: clipboardEditor.getTarget(),
+            promptGroups: [],
+            promptGroupsList,
+            renderPromptGroups,
             previewTriggers,
             previewTags,
             currentCardId: null,
@@ -993,12 +1316,19 @@ export class CivitaiDownloaderUI {
 
         const customTriggers = this.sanitizeStringList(latestMeta?.custom_triggers ?? item.custom_triggers ?? []);
         const customTags = this.sanitizeStringList(latestMeta?.custom_tags ?? item.custom_tags ?? []);
+        const promptGroups = this.sanitizePromptGroups(latestMeta?.custom_prompt_groups ?? item.custom_prompt_groups ?? []);
         drawer.initialValues = {
             triggers: customTriggers.slice(),
             tags: customTags.slice(),
         };
         drawer.triggersEditor.setValues(customTriggers, true);
         drawer.tagsEditor.setValues(customTags, true);
+        drawer.promptGroups = promptGroups;
+        drawer.renderPromptGroups?.();
+        if (drawer.clipboard) {
+            drawer.clipboard.clear();
+            drawer.clipboard.setTarget(drawer.clipboardTarget || 'triggers');
+        }
         this.updateCardMetaDrawerState();
 
         drawer.container.classList.add('open');
@@ -1021,6 +1351,9 @@ export class CivitaiDownloaderUI {
         drawer.currentCardId = null;
         drawer.currentItem = null;
         drawer.initialValues = { triggers: [], tags: [] };
+        drawer.promptGroups = [];
+        drawer.renderPromptGroups?.();
+        drawer.clipboard?.clear();
         if (drawer.subtitle) drawer.subtitle.textContent = '';
         this.removeCardMetaFocusTrap();
         if (restoreFocus && this.cardMetaOpener && typeof this.cardMetaOpener.focus === 'function') {
@@ -1029,13 +1362,16 @@ export class CivitaiDownloaderUI {
         this.cardMetaOpener = null;
     }
 
-    updateLibraryCardMeta(cardId, customTags, customTriggers) {
+    updateLibraryCardMeta(cardId, customTags, customTriggers, promptGroups = null) {
         if (!Array.isArray(this.libraryItems)) return;
         const index = this.libraryItems.findIndex((entry) => entry && entry.id === cardId);
         if (index === -1) return;
         const item = this.libraryItems[index];
         item.custom_tags = this.sanitizeStringList(customTags);
         item.custom_triggers = this.sanitizeStringList(customTriggers);
+        if (promptGroups !== null) {
+            item.custom_prompt_groups = this.sanitizePromptGroups(promptGroups);
+        }
     }
 
     async saveCardMetaDrawer() {
@@ -1043,6 +1379,7 @@ export class CivitaiDownloaderUI {
         if (!drawer || !drawer.currentCardId || drawer.saving) return;
         const triggers = this.sanitizeStringList(drawer.triggersEditor.getValues());
         const tags = this.sanitizeStringList(drawer.tagsEditor.getValues());
+        const promptGroups = this.sanitizePromptGroups(drawer.promptGroups);
         const changed = !this.listsEqualIgnoreCase(triggers, drawer.initialValues.triggers)
             || !this.listsEqualIgnoreCase(tags, drawer.initialValues.tags);
         if (!changed) {
@@ -1057,6 +1394,7 @@ export class CivitaiDownloaderUI {
             const response = await CivitaiDownloaderAPI.updateCardMeta(drawer.currentCardId, {
                 custom_triggers: triggers,
                 custom_tags: tags,
+                custom_prompt_groups: promptGroups,
             });
             if (response?.success === false) {
                 throw new Error(response?.error || 'Failed to save metadata');
@@ -1064,11 +1402,15 @@ export class CivitaiDownloaderUI {
             const savedCard = response?.card || {};
             const savedTriggers = this.sanitizeStringList(savedCard.custom_triggers ?? triggers);
             const savedTags = this.sanitizeStringList(savedCard.custom_tags ?? tags);
+            const savedGroups = this.sanitizePromptGroups(savedCard.custom_prompt_groups ?? promptGroups);
             drawer.initialValues = { triggers: savedTriggers.slice(), tags: savedTags.slice() };
-            this.updateLibraryCardMeta(drawer.currentCardId, savedTags, savedTriggers);
+            drawer.promptGroups = savedGroups;
+            drawer.renderPromptGroups?.();
+            this.updateLibraryCardMeta(drawer.currentCardId, savedTags, savedTriggers, savedGroups);
             if (drawer.currentItem) {
                 drawer.currentItem.custom_tags = savedTags.slice();
                 drawer.currentItem.custom_triggers = savedTriggers.slice();
+                drawer.currentItem.custom_prompt_groups = savedGroups.slice();
             }
             this.showToast('Tags & triggers updated', 'success');
             this.applyLibraryFilter();
