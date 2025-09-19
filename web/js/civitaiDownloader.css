@@ -1245,6 +1245,275 @@
     gap: 12px;
 }
 
+.civitai-card-meta-section.civitai-card-meta-clipboard,
+.civitai-card-meta-section.civitai-card-meta-groups {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 14px;
+}
+
+.civitai-prompt-clipboard {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.civitai-prompt-clipboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.civitai-prompt-clipboard-title {
+    margin: 0;
+    font-size: 1.05em;
+}
+
+.civitai-prompt-clipboard-count {
+    font-size: 0.85em;
+    color: #a0aec0;
+}
+
+.civitai-prompt-clipboard-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.civitai-prompt-clipboard-label {
+    font-size: 0.85em;
+    color: #cbd5f5;
+}
+
+.civitai-prompt-clipboard-select {
+    background: var(--comfy-input-bg, #1e1e1e);
+    color: var(--comfy-text-color, #f1f1f1);
+    border: 1px solid var(--border-color, #4a4a4a);
+    border-radius: 6px;
+    padding: 6px 10px;
+    min-width: 140px;
+}
+
+.civitai-prompt-clipboard-actions {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.civitai-prompt-clipboard-actions button,
+.civitai-clipboard-add,
+.civitai-clipboard-save {
+    background: var(--comfy-input-bg, #1f1f27);
+    border: 1px solid var(--border-color, #4b4b55);
+    color: var(--comfy-text-color, #f3f3f3);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+}
+
+.civitai-prompt-clipboard-actions button.primary {
+    background: var(--accent-color, #5c8aff);
+    border-color: transparent;
+    color: #0b1024;
+}
+
+.civitai-prompt-clipboard-actions button:hover,
+.civitai-clipboard-add:hover,
+.civitai-clipboard-save:hover {
+    background: rgba(255, 255, 255, 0.06);
+    transform: translateY(-1px);
+}
+
+.civitai-prompt-clipboard-actions button.primary:hover {
+    background: var(--accent-color-hover, #7fa4ff);
+}
+
+.civitai-prompt-clipboard-actions button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.civitai-prompt-clipboard-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.civitai-prompt-clipboard-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 6px 10px;
+}
+
+.civitai-prompt-clipboard-item.dragover {
+    border-color: var(--accent-color, #5c8aff);
+    box-shadow: inset 0 0 0 1px rgba(92, 138, 255, 0.35);
+}
+
+.civitai-prompt-clipboard-handle {
+    background: transparent;
+    border: none;
+    cursor: grab;
+    color: #9aa4bd;
+    font-size: 18px;
+    padding: 0 4px;
+}
+
+.civitai-prompt-clipboard-input {
+    flex: 1;
+    min-width: 120px;
+    background: var(--comfy-input-bg, #1e1e1e);
+    color: var(--comfy-text-color, #fff);
+    border: 1px solid var(--border-color, #4c4c4c);
+    border-radius: 6px;
+    padding: 6px 10px;
+}
+
+.civitai-prompt-clipboard-input:focus {
+    outline: none;
+    border-color: var(--accent-color, #5c8aff);
+    box-shadow: 0 0 0 2px rgba(92, 138, 255, 0.25);
+}
+
+.civitai-prompt-clipboard-item-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.civitai-prompt-clipboard-item-actions button,
+.civitai-prompt-group-actions button {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--comfy-text-color, #f5f5f5);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.75em;
+    cursor: pointer;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.civitai-prompt-clipboard-item-actions button:hover,
+.civitai-prompt-group-actions button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.civitai-prompt-clipboard-remove {
+    color: #ff9a9a;
+}
+
+.civitai-prompt-clipboard-remove:hover {
+    color: #ffc5c5;
+}
+
+.civitai-prompt-clipboard-empty {
+    padding: 12px;
+    text-align: center;
+    color: #9aa0b5;
+    background: rgba(0, 0, 0, 0.15);
+    border-radius: 8px;
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.civitai-prompt-clipboard-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.civitai-prompt-groups-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.civitai-prompt-groups-header h4 {
+    margin: 0;
+}
+
+.civitai-prompt-groups-helper {
+    margin: 0;
+    font-size: 0.85em;
+    color: #9aa0b5;
+}
+
+.civitai-prompt-groups-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.civitai-prompt-group-empty {
+    padding: 10px;
+    text-align: center;
+    color: #9aa0b5;
+    background: rgba(0, 0, 0, 0.18);
+    border-radius: 8px;
+    border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.civitai-prompt-group-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 8px 12px;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.civitai-prompt-group-item:hover {
+    border-color: rgba(92, 138, 255, 0.5);
+    background: rgba(92, 138, 255, 0.1);
+}
+
+.civitai-prompt-group-load {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    background: none;
+    border: none;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    padding: 0;
+}
+
+.civitai-prompt-group-name {
+    font-weight: 600;
+}
+
+.civitai-prompt-group-meta {
+    font-size: 0.75em;
+    color: #9aa0b5;
+}
+
+.civitai-prompt-group-actions {
+    display: flex;
+    gap: 6px;
+}
+
 .civitai-chip-editor {
     display: flex;
     flex-direction: column;
