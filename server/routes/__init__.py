@@ -19,5 +19,8 @@ from . import OpenPath
 from . import RetryDownload
 from . import SearchModels
 from . import DeleteLibraryItem
+from . import LocalModelDetails
+from . import ServeLocalMedia
+from . import Workflows
 
 print("[Civicomfy] All server route modules loaded.")

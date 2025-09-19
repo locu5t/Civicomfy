@@ -12,6 +12,7 @@ DOWNLOAD_HISTORY_LIMIT = 100
 DOWNLOAD_TIMEOUT = 60 # Timeout for individual download chunks/requests (seconds)
 HEAD_REQUEST_TIMEOUT = 25 # Timeout for initial HEAD request (seconds)
 METADATA_DOWNLOAD_TIMEOUT = 20 # Timeout for downloading thumbnail (seconds)
+MEDIA_DOWNLOAD_TIMEOUT = 30    # Timeout for downloading each media asset (seconds)
 
 # --- Paths ---
 # The root directory of *this specific plugin/extension*
@@ -84,6 +85,9 @@ AVAILABLE_MEILI_BASE_MODELS = [
 # --- Filename Suffixes ---
 METADATA_SUFFIX = ".cminfo.json"
 PREVIEW_SUFFIX = ".preview.jpeg" # Keep as requested, even if source is png/webp
+MEDIA_DIR_SUFFIX = ".media"      # Folder next to the model file for cached media
+OFFLINE_DETAILS_VERSION = 1       # Schema version for offline details payload
+MAX_OFFLINE_MEDIA = 24            # Max media assets to cache per model for offline view
 
 # --- Log Initial Paths for Verification ---
 print("-" * 30)

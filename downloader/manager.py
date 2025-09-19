@@ -459,10 +459,9 @@ class DownloadManager:
                     item["connection_type"] = connection_type
                     updated = True
 
-    # --- _save_civitai_metadata remains the same ---
-    def _save_civitai_metadata(self, download_info: Dict[str, Any]):
-        """Saves the .cminfo.json file."""
-        # ... (no changes needed here) ...
+    # --- _save_civitai_metadata: now writes rich offline details payload ---
+    def _save_civitai_metadata(self, download_info: Dict[str, Any], cached_media: Optional[List[Dict[str, Any]]] = None, preview_path: Optional[str] = None):
+        """Saves the .cminfo.json file with rich offline details, including media references."""
         output_path = download_info.get('output_path')
         model_info = download_info.get('civitai_model_info', {})
         version_info = download_info.get('civitai_version_info', {})
@@ -475,6 +474,7 @@ class DownloadManager:
             model_stats = model_info.get('stats', {}) or {}
             version_stats = version_info.get('stats', {}) or {}
 
+            # Build a stable base metadata block
             metadata = {
                 "ModelId": model_info.get('id', version_info.get('modelId')) , # Use .get() on version info too
                 "ModelName": model_info.get('name', version_info.get('model',{}).get('name')), # Nested .get()
@@ -517,7 +517,82 @@ class DownloadManager:
                     "thumbsUpCount": version_stats.get('thumbsUpCount', 0),
                  },
                  "DownloadUrlUsed": download_info.get('url'),
+                 # Keep a copy of raw objects for potential future use
+                 "_raw": {
+                     "model": model_info,
+                     "version": version_info,
+                     "primary_file": primary_file,
+                 }
             }
+
+            # Build an offline details payload compatible with the UI details modal
+            try:
+                from ..config import OFFLINE_DETAILS_VERSION
+            except Exception:
+                OFFLINE_DETAILS_VERSION = 1
+
+            # Prepare media references from cached_media
+            images_payload: List[Dict[str, Any]] = []
+            if isinstance(cached_media, list):
+                for m in cached_media:
+                    if not isinstance(m, dict):
+                        continue
+                    if not m.get('abs_path'):
+                        continue
+                    images_payload.append({
+                        'path': m.get('abs_path'),   # absolute path on disk
+                        'type': m.get('type') or 'image',
+                        'nsfwLevel': m.get('nsfwLevel'),
+                        'width': m.get('width'),
+                        'height': m.get('height'),
+                        # prompt metadata retained if available
+                        'prompt': (m.get('meta') or {}).get('prompt'),
+                        'negativePrompt': (m.get('meta') or {}).get('negativePrompt'),
+                    })
+
+            stats_block = metadata.get('Stats') or {}
+            # File info block
+            _pfmeta = primary_file.get('metadata') or {}
+            file_info_block = {
+                'name': primary_file.get('name') or 'N/A',
+                'size_kb': primary_file.get('sizeKB'),
+                'format': _pfmeta.get('format', 'N/A'),
+                'model_size': _pfmeta.get('size', 'N/A'),
+                'precision': (_pfmeta.get('precision') or _pfmeta.get('fp') or 'N/A'),
+            }
+
+            offline_details = {
+                'schema_version': OFFLINE_DETAILS_VERSION,
+                'success': True,
+                'model_id': metadata.get('ModelId'),
+                'version_id': metadata.get('VersionId'),
+                'model_name': metadata.get('ModelName') or (version_info.get('model') or {}).get('name'),
+                'version_name': metadata.get('VersionName') or 'Unknown Version',
+                'creator_username': metadata.get('CreatorUsername') or 'Unknown Creator',
+                'model_type': metadata.get('ModelType') or 'Unknown',
+                'civitai_url': None,  # may be absent offline
+                'description_html': metadata.get('ModelDescription') or '<p><em>No description provided.</em></p>',
+                'version_description_html': metadata.get('VersionDescription') or '<p><em>No version description.</em></p>',
+                'stats': {
+                    'downloads': stats_block.get('downloadCount', 0),
+                    'likes': stats_block.get('thumbsUpCount', 0),
+                    'dislikes': 0,
+                    'buzz': 0,
+                },
+                'published_at': metadata.get('VersionPublishedAt') or (version_info.get('published_at')),
+                'updated_at': metadata.get('VersionUpdatedAt') or (version_info.get('updated_at')),
+                'file_info': file_info_block,
+                'files': [],  # Optional list of files for the version
+                'thumbnail_path': preview_path if isinstance(preview_path, str) else None,
+                'nsfw_level': None,
+                'base_model': metadata.get('BaseModel') or '',
+                'model_versions': [],
+                'tags': metadata.get('Tags') or [],
+                'trained_words': metadata.get('TrainedWords') or [],
+                'images': images_payload,
+            }
+
+            metadata["OfflineDetails"] = offline_details
 
             base, _ = os.path.splitext(output_path)
             meta_filename = base + METADATA_SUFFIX
@@ -534,7 +609,7 @@ class DownloadManager:
             # traceback.print_exc() # Uncomment for full trace
 
     # --- _download_and_save_preview remains the same ---
-    def _download_and_save_preview(self, download_info: Dict[str, Any]):
+    def _download_and_save_preview(self, download_info: Dict[str, Any]) -> Optional[str]:
         """Downloads and saves the .preview.jpeg file."""
         # ... (no changes needed here) ...
         output_path = download_info.get('output_path')
@@ -544,7 +619,7 @@ class DownloadManager:
 
         if not output_path:
              print(f"[Manager Preview {download_id}] Skipping preview download: Missing output path.")
-             return
+             return None
         if not thumbnail_url:
              print(f"[Manager Preview {download_id}] Skipping preview download: No thumbnail URL provided.")
             # Optionally try to find one in version_info images again? Might be redundant.
@@ -565,9 +640,35 @@ class DownloadManager:
                        print(f"[Manager Preview {download_id}] Found alternative thumbnail URL: {thumbnail_url}")
                   else:
                       print(f"[Manager Preview {download_id}] Still no thumbnail URL found in version info.")
-                      return # Exit if still no URL
+                      # Will try cached media below
              else:
-                 return # Exit if no URL and no version info to search
+                 pass
+
+        # If we still don't have a URL, try cached media (.media) for a poster/image
+        if not thumbnail_url:
+            try:
+                base_b, _ = os.path.splitext(output_path)
+                from ..config import MEDIA_DIR_SUFFIX
+                media_dir = base_b + MEDIA_DIR_SUFFIX
+                if os.path.isdir(media_dir):
+                    names = []
+                    try:
+                        names = sorted(os.listdir(media_dir))
+                    except Exception:
+                        names = []
+                    pick = next((n for n in names if n.lower().endswith('.poster.jpg')), None)
+                    if not pick:
+                        pick = next((n for n in names if n.lower().endswith(('.jpg','.jpeg','.png','.webp'))), None)
+                    if pick:
+                        preview_filename = base_b + PREVIEW_SUFFIX
+                        preview_path = os.path.join(os.path.dirname(output_path), preview_filename)
+                        import shutil as _sh
+                        _sh.copyfile(os.path.join(media_dir, pick), preview_path)
+                        print(f"[Manager Preview {download_id}] Using cached media image as preview: {pick} -> {preview_path}")
+                        return preview_path
+            except Exception as _e:
+                print(f"[Manager Preview {download_id}] Cached media fallback failed: {_e}")
+            return None
 
         base, _ = os.path.splitext(output_path)
         preview_filename = base + PREVIEW_SUFFIX
@@ -582,11 +683,30 @@ class DownloadManager:
             response.raise_for_status()
             content_type = response.headers.get('Content-Type', '').lower()
             if not content_type.startswith('image/'):
-                 print(f"[Manager Preview {download_id}] Warning: Thumbnail URL returned non-image content type '{content_type}'. Skipping save.")
-                 return
+                 print(f"[Manager Preview {download_id}] Warning: Thumbnail URL returned non-image content type '{content_type}'. Trying cached media fallback.")
+                 try:
+                     base_b, _ = os.path.splitext(output_path)
+                     from ..config import MEDIA_DIR_SUFFIX
+                     media_dir = base_b + MEDIA_DIR_SUFFIX
+                     if os.path.isdir(media_dir):
+                         names = []
+                         try: names = sorted(os.listdir(media_dir))
+                         except Exception: names = []
+                         pick = next((n for n in names if n.lower().endswith('.poster.jpg')), None)
+                         if not pick:
+                             pick = next((n for n in names if n.lower().endswith(('.jpg','.jpeg','.png','.webp'))), None)
+                         if pick:
+                             import shutil as _sh
+                             _sh.copyfile(os.path.join(media_dir, pick), preview_path)
+                             print(f"[Manager Preview {download_id}] Using cached poster as preview due to non-image content: {pick}")
+                             return preview_path
+                 except Exception as _e:
+                     print(f"[Manager Preview {download_id}] Cached fallback after non-image response failed: {_e}")
+                 return None
             with open(preview_path, 'wb') as f:
                  for chunk in response.iter_content(chunk_size=8192): f.write(chunk)
             print(f"[Manager Preview {download_id}] Thumbnail downloaded successfully.")
+            return preview_path
         except requests.exceptions.RequestException as e:
              error_msg = f"Error downloading thumbnail {thumbnail_url}: {e}"
              if hasattr(e, 'response') and e.response is not None: error_msg += f" (Status: {e.response.status_code})"
@@ -594,6 +714,112 @@ class DownloadManager:
         except Exception as e: print(f"[Manager Preview {download_id}] Error saving thumbnail {preview_path}: {e}")
         finally:
             if response: response.close()
+        return None
+
+    def _cache_version_media(self, download_info: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Download a subset of version media (images/videos) to a local cache folder.
+        Returns a list of dict entries: { abs_path, type, nsfwLevel, width, height, meta }.
+        """
+        from ..config import MEDIA_DIR_SUFFIX, MAX_OFFLINE_MEDIA, MEDIA_DOWNLOAD_TIMEOUT
+
+        version_info = download_info.get('civitai_version_info') or {}
+        output_path = download_info.get('output_path')
+        download_id = download_info.get('id', 'unknown')
+        api_key = download_info.get('api_key')
+        results: List[Dict[str, Any]] = []
+
+        if not output_path:
+            return results
+
+        base, _ = os.path.splitext(output_path)
+        media_dir = base + MEDIA_DIR_SUFFIX
+        try:
+            os.makedirs(media_dir, exist_ok=True)
+        except Exception as e:
+            print(f"[Manager Media {download_id}] Failed creating media dir '{media_dir}': {e}")
+            return results
+
+        items = version_info.get('images') or []
+        if not isinstance(items, list) or not items:
+            return results
+
+        # Sort by index then limit count
+        try:
+            items_sorted = sorted([i for i in items if isinstance(i, dict) and i.get('url')], key=lambda x: x.get('index', 0))
+        except Exception:
+            items_sorted = [i for i in items if isinstance(i, dict) and i.get('url')]
+
+        to_fetch = items_sorted[:MAX_OFFLINE_MEDIA]
+        session = requests.Session()
+        headers = {}
+        if api_key:
+            headers['Authorization'] = f"Bearer {api_key}"
+
+        for idx, media in enumerate(to_fetch):
+            url = media.get('url')
+            mtype = (media.get('type') or 'image').lower()
+            ext = 'jpg'
+            if 'png' in url:
+                ext = 'png'
+            elif 'webp' in url:
+                ext = 'webp'
+            elif 'gif' in url:
+                ext = 'gif'
+            elif 'mp4' in url or mtype == 'video':
+                ext = 'mp4'
+                mtype = 'video'
+
+            fname = f"media_{idx:02d}.{ext}"
+            fpath = os.path.join(media_dir, fname)
+            try:
+                resp = session.get(url, stream=True, headers=headers, timeout=MEDIA_DOWNLOAD_TIMEOUT, allow_redirects=True)
+                resp.raise_for_status()
+                with open(fpath, 'wb') as fh:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            fh.write(chunk)
+                entry = {
+                    'abs_path': fpath,
+                    'type': mtype,
+                    'nsfwLevel': media.get('nsfwLevel'),
+                    'width': media.get('width'),
+                    'height': media.get('height'),
+                    'meta': media.get('meta') or media.get('metadata') or {},
+                }
+                results.append(entry)
+                # If video, try to create a poster image for thumbnail usage
+                if mtype == 'video':
+                    try:
+                        poster_path = os.path.join(media_dir, f"media_{idx:02d}.poster.jpg")
+                        if self._generate_video_poster(fpath, poster_path):
+                            entry['poster_path'] = poster_path
+                            print(f"[Manager Media {download_id}] Poster generated: {poster_path}")
+                    except Exception as _pe:
+                        print(f"[Manager Media {download_id}] Poster generation failed: {_pe}")
+            except requests.exceptions.RequestException as e:
+                print(f"[Manager Media {download_id}] Error downloading media {url}: {e}")
+            except Exception as e:
+                print(f"[Manager Media {download_id}] Error saving media {fpath}: {e}")
+            finally:
+                try:
+                    if 'resp' in locals() and resp is not None:
+                        resp.close()
+                except Exception:
+                    pass
+        return results
+
+    def _generate_video_poster(self, video_path: str, out_path: str) -> bool:
+        """Generate a still from the first video frame using ffmpeg if present."""
+        try:
+            import shutil as _sh
+            ffmpeg = _sh.which('ffmpeg')
+            if not ffmpeg:
+                return False
+            cmd = [ffmpeg, '-y', '-ss', '0.001', '-i', video_path, '-frames:v', '1', '-vf', 'scale=512:-2', out_path]
+            proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+            return proc.returncode == 0 and os.path.exists(out_path)
+        except Exception:
+            return False
 
     # --- _download_file_wrapper remains the same ---
     def _download_file_wrapper(self, download_info: Dict[str, Any]):
@@ -637,8 +863,21 @@ class DownloadManager:
                 final_status = "completed"
                 print(f"[Downloader Wrapper {download_id}] Download completed successfully for '{filename}'.")
                 try:
-                    self._save_civitai_metadata(download_info)
-                    self._download_and_save_preview(download_info)
+                    # First cache media and preview so metadata can reference them
+                    cached_media = []
+                    try:
+                        cached_media = self._cache_version_media(download_info)
+                    except Exception as _cm_err:
+                        print(f"[Downloader Wrapper {download_id}] Media cache step failed: {_cm_err}")
+                        cached_media = []
+
+                    preview_path = None
+                    try:
+                        preview_path = self._download_and_save_preview(download_info)
+                    except Exception as _pv_err:
+                        print(f"[Downloader Wrapper {download_id}] Preview step failed: {_pv_err}")
+
+                    self._save_civitai_metadata(download_info, cached_media=cached_media, preview_path=preview_path)
                 except Exception as meta_err:
                      print(f"[Downloader Wrapper {download_id}] Error during post-download metadata/preview saving: {meta_err}")
 
@@ -959,6 +1198,18 @@ class DownloadManager:
             if not isinstance(tags, list):
                 tags = []
 
+            # Published date prefers version's publishedAt, with model-level fallback
+            published_at = None
+            try:
+                published_at = (
+                    version_info.get("publishedAt")
+                    or version_info.get("published_at")
+                    or model_info.get("publishedAt")
+                    or model_info.get("published_at")
+                )
+            except Exception:
+                published_at = None
+
             results.append({
                 "id": entry.get("id"),
                 "model_id": entry.get("civitai_model_id") or entry.get("model_id"),
@@ -968,6 +1219,7 @@ class DownloadManager:
                 "filename": entry.get("filename"),
                 "path": path,
                 "model_type": entry.get("model_type"),
+                "base_model": version_info.get("baseModel"),
                 "size_bytes": size_bytes,
                 "thumbnail": entry.get("thumbnail"),
                 "thumbnail_nsfw_level": entry.get("thumbnail_nsfw_level"),
@@ -975,6 +1227,7 @@ class DownloadManager:
                 "file_precision": entry.get("file_precision"),
                 "file_model_size": entry.get("file_model_size"),
                 "downloaded_at": entry.get("end_time") or entry.get("start_time") or entry.get("added_time"),
+                "published_at": published_at,
                 "exists": bool(exists),
                 "metadata_path": metadata_path,
                 "preview_path": preview_path,

@@ -11,6 +11,7 @@ export function getDefaultSettings() {
         hideMatureInSearch: true,
         nsfwBlurMinLevel: 4, // Blur thumbnails with nsfwLevel >= this value
         mergedSearchDownloadUI: false,
+        nodeMappings: { byType: {}, byBase: {} },
     };
 }
 
@@ -96,6 +97,16 @@ export function handleSettingsSave(ui) {
     ui.settings.hideMatureInSearch = hideMatureInSearch;
     ui.settings.nsfwBlurMinLevel = (Number.isFinite(nsfwBlurMinLevel) && nsfwBlurMinLevel >= 0) ? Math.min(128, Math.round(nsfwBlurMinLevel)) : 4;
     ui.settings.mergedSearchDownloadUI = mergedSearchDownloadUI;
+
+    // Read node mappings if present in UI
+    try {
+        if (typeof ui.readNodeMappingsFromUI === 'function') {
+            const nodeMappings = ui.readNodeMappingsFromUI();
+            ui.settings.nodeMappings = nodeMappings;
+        }
+    } catch (e) {
+        console.warn('[Civicomfy] Failed reading node mappings:', e);
+    }
 
     ui.saveSettingsToCookie();
     ui.applySettings();

@@ -47,6 +47,47 @@ export function setupEventListeners(ui) {
                 ui.handleOpenPath(downloadId, button);
             } else if (button.classList.contains('civitai-library-delete')) {
                 await ui.handleDeleteLibraryItem(downloadId, button);
+            } else if (button.classList.contains('civitai-library-details')) {
+                const container = button.closest('.civitai-library-item');
+                const id = container?.dataset?.id || button.dataset.id;
+                const item = Array.isArray(ui.libraryItems) ? ui.libraryItems.find(x => x && x.id === id) : null;
+                if (!item) {
+                    ui.showToast('Could not locate library item', 'error');
+                    return;
+                }
+                try {
+                    await ui.openLibraryDetails(item);
+                } catch (e) {
+                    ui.showToast('Failed to open details', 'error');
+                }
+            } else if (button.classList.contains('civitai-library-add')) {
+                const container = button.closest('.civitai-library-item');
+                const id = container?.dataset?.id || button.dataset.id;
+                const item = Array.isArray(ui.libraryItems) ? ui.libraryItems.find(x => x && x.id === id) : null;
+                if (!item) {
+                    ui.showToast('Could not locate library item', 'error');
+                    return;
+                }
+                try {
+                    await ui.addToComfyUI(item);
+                } catch (e) {
+                    console.error('Add to ComfyUI failed:', e);
+                    ui.showToast('Failed to add to ComfyUI', 'error');
+                }
+            } else if (button.classList.contains('civitai-library-workflow')) {
+                const container = button.closest('.civitai-library-item');
+                const id = container?.dataset?.id || button.dataset.id;
+                const item = Array.isArray(ui.libraryItems) ? ui.libraryItems.find(x => x && x.id === id) : null;
+                if (!item) {
+                    ui.showToast('Could not locate library item', 'error');
+                    return;
+                }
+                try {
+                    await ui.openWorkflowPopup(item);
+                } catch (e) {
+                    console.error('Workflow popup failed:', e);
+                    ui.showToast('Failed to open workflow options', 'error');
+                }
             }
         });
     }

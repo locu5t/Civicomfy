@@ -1,5 +1,14 @@
 // web/js/ui/searchRenderer.js
 // Rendering helpers for search result cards and inline download drawer.
+const PLACEHOLDER_IMAGE_URL = `/extensions/Civicomfy/images/placeholder.jpeg`;
+
+function isVideoUrl(url = '') {
+  try {
+    return /\.(mp4|webm|mov)(?:\?|$)/i.test(String(url));
+  } catch (_) {
+    return false;
+  }
+}
 
 export function renderSearchResults(containerEl, results = []) {
   if (!containerEl) return;
@@ -33,9 +42,15 @@ export function createCardElement(model) {
 
   const statsText = buildStatsText(model);
 
+  const thumbSrc = String(model.thumbUrl || '').trim();
+  const onError = `this.onerror=null; this.src='${PLACEHOLDER_IMAGE_URL}';`;
+  const thumbHtml = isVideoUrl(thumbSrc)
+    ? `<img src="${PLACEHOLDER_IMAGE_URL}" alt="${escapeHtml(model.title || '')}" loading="lazy">`
+    : `<img src="${escapeHtml(thumbSrc)}" alt="${escapeHtml(model.title || '')}" loading="lazy" onerror="${onError}">`;
+
   card.innerHTML = `
     <div class="civi-card-top">
-      <div class="civi-thumb"><img src="${escapeHtml(model.thumbUrl || '')}" alt="${escapeHtml(model.title || '')}" loading="lazy"></div>
+      <div class="civi-thumb">${thumbHtml}</div>
       <div class="civi-meta">
         <h4 class="civi-title">${escapeHtml(model.title || 'Untitled')}</h4>
         <div class="civi-author">by ${escapeHtml(model.author || 'Unknown')}</div>
@@ -47,7 +62,7 @@ export function createCardElement(model) {
       <select class="civi-version-select" aria-label="Select version"></select>
       <button class="civi-btn civi-btn-quick-download" title="Quick download" aria-label="Quick download">Download</button>
       <label class="civi-checkbox"><input type="checkbox" class="civi-card-select" /> Select</label>
-      <button class="civi-btn civi-btn-details" title="Full details" aria-label="Full details">Details</button>
+      <button class="civi-btn civi-btn-details" title="View details" aria-label="View details"><i class="fas fa-search-plus"></i></button>
     </div>
 
     <div class="civi-local-meta">

@@ -93,8 +93,10 @@ async def route_search_models(request):
                    # Get thumbnail from images array (prefer first image)
                    images = hit.get("images")
                    if images and isinstance(images, list) and len(images) > 0:
-                       first_image = images[0]
-                       # Ensure first image is a dict with a 'url' field
+                       # Prefer items explicitly marked as images
+                       valid = [img for img in images if isinstance(img, dict) and img.get("url")]
+                       preferred = next((img for img in valid if (str(img.get("type") or "").lower() == "image")), None)
+                       first_image = preferred or valid[0]
                        if isinstance(first_image, dict) and first_image.get("url"):
                            image_id = first_image["url"]
                            # Construct URL with a default width (e.g., 256 or 450)

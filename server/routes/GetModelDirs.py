@@ -2,6 +2,7 @@
 # File: server/routes/GetModelDirs.py
 # ================================================
 import os
+import re
 import json
 from aiohttp import web
 
@@ -127,8 +128,8 @@ async def route_create_model_dir(request):
         base_dir = (data.get("root") or "").strip() or get_model_dir(model_type)
 
         # Normalize and sanitize each part; disallow absolute and traversal
-        norm = os.path.normpath(new_dir.replace("\\", "/"))
-        parts = [p for p in norm.split("/") if p and p not in (".", "..")]
+        # Split on both separators to preserve nested structure on Windows/Linux
+        parts = [p for p in re.split(r"[\\/]+", new_dir or "") if p and p not in (".", "..")]
         safe_parts = [sanitize_filename(p) for p in parts]
         rel_path = os.path.join(*safe_parts) if safe_parts else ""
         if not rel_path:

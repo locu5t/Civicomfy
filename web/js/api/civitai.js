@@ -78,6 +78,14 @@ export class CivitaiDownloaderAPI {
     });
   }
 
+  static async getLocalDetails(params) {
+    return await this._request("/civitai/local_details", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  }
+
   static async getStatus() {
     return await this._request("/civitai/status");
   }
@@ -172,6 +180,70 @@ export class CivitaiDownloaderAPI {
     return await this._request("/civitai/clear_history", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+    });
+  }
+
+  // ---- Workflows API ----
+  static async listWorkflows(cardId = null) {
+    const q = cardId ? `?card_id=${encodeURIComponent(cardId)}` : '';
+    return await this._request(`/civitai/workflows${q}`);
+  }
+
+  static async getWorkflow(workflowId) {
+    return await this._request(`/civitai/workflows/${encodeURIComponent(workflowId)}`);
+  }
+
+  static async saveWorkflow(payload) {
+    return await this._request(`/civitai/workflows`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static async deleteWorkflow(workflowId) {
+    return await this._request(`/civitai/workflows/${encodeURIComponent(workflowId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  static async attachWorkflowToCard(cardId, workflowId) {
+    return await this._request(`/civitai/cards/${encodeURIComponent(cardId)}/attach_workflow`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workflow_id: workflowId }),
+    });
+  }
+
+  static async detachWorkflowFromCard(cardId, workflowId) {
+    return await this._request(`/civitai/cards/${encodeURIComponent(cardId)}/detach_workflow`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ workflow_id: workflowId }),
+    });
+  }
+
+  static async getCardWorkflows(cardId) {
+    return await this._request(`/civitai/cards/${encodeURIComponent(cardId)}/workflows`);
+  }
+
+  static async setCardSingleBinding(cardId, nodeType, widget = "") {
+    return await this._request(`/civitai/cards/${encodeURIComponent(cardId)}/set_binding`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ node_type: nodeType, widget }),
+    });
+  }
+
+  static async exportWorkflows() {
+    return await this._request(`/civitai/workflows/export`);
+  }
+
+  static async importWorkflows(data) {
+    return await this._request(`/civitai/workflows/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
     });
   }
 }

@@ -230,9 +230,12 @@ async def route_download_model(request):
         sub_path = ""
 
         # Subdir: only use the selected existing subdir coming from UI
+        # Split on both separators to preserve nested structure across platforms
         if selected_subdir:
-            norm_sub = os.path.normpath(selected_subdir.replace('\\', '/'))
-            parts = [p for p in norm_sub.split('/') if p and p not in ('.', '..')]
+            try:
+                parts = [p for p in re.split(r"[\\/]+", selected_subdir) if p and p not in ('.', '..')]
+            except Exception:
+                parts = []
             if parts:
                 sub_path = os.path.join(*[sanitize_filename(p) for p in parts])
 

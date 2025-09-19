@@ -1,0 +1,765 @@
+{
+  "version": 1,
+  "workflows": [
+    {
+      "workflow_id": "wf_1758188943376_0",
+      "name": "[ILLUST] Rangiku Matsumoto | Bleach (18/09/2025, 21:48:49)",
+      "node_list": [
+        {
+          "id": "n1",
+          "type": "LoraLoader",
+          "widgets": {
+            "lora_name": "Illustrious\\Rangiku_Matsumoto_Bleach\\v1.0\\matsumoto_rangiku_illust_scarxzys.safetensors",
+            "strength_model": 1,
+            "strength_clip": 1
+          },
+          "title": "Load LoRA"
+        },
+        {
+          "id": "n2",
+          "type": "CheckpointLoader",
+          "widgets": {
+            "config_name": "anything_v3.yaml",
+            "ckpt_name": "Illustrious\\Illustrij\\v18\\illustrij_v18.safetensors"
+          },
+          "title": "Load Checkpoint With Config (DEPRECATED)"
+        },
+        {
+          "id": "n3",
+          "type": "VAEDecode",
+          "widgets": {},
+          "title": "VAE Decode"
+        },
+        {
+          "id": "n4",
+          "type": "PreviewImage",
+          "widgets": {},
+          "title": "Preview Image"
+        },
+        {
+          "id": "n5",
+          "type": "SaveImage",
+          "widgets": {
+            "filename_prefix": "ComfyUI"
+          },
+          "title": "Save Image"
+        },
+        {
+          "id": "n6",
+          "type": "CLIPTextEncode",
+          "widgets": {
+            "text": "matsumoto rangiku, orange hair, parted bangs, long hair, blue eyes, mole under mouth, necklace, bleach style"
+          },
+          "title": "CLIP Text Encode (Prompt)"
+        },
+        {
+          "id": "n7",
+          "type": "KSampler",
+          "widgets": {
+            "seed": 301145340501928,
+            "control_after_generate": "randomize",
+            "steps": 20,
+            "cfg": 8,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "denoise": 1
+          },
+          "title": "KSampler"
+        },
+        {
+          "id": "n8",
+          "type": "EmptyLatentImage",
+          "widgets": {
+            "width": 512,
+            "height": 768,
+            "batch_size": 1
+          },
+          "title": "Empty Latent Image"
+        },
+        {
+          "id": "n9",
+          "type": "CLIPTextEncode",
+          "widgets": {
+            "text": ""
+          },
+          "title": "CLIP Text Encode (Prompt)"
+        }
+      ],
+      "connections": [
+        {
+          "from": "n2",
+          "out_index": 0,
+          "out_name": "MODEL",
+          "to": "n1",
+          "in_index": 0,
+          "in_name": "model"
+        },
+        {
+          "from": "n2",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n1",
+          "in_index": 1,
+          "in_name": "clip"
+        },
+        {
+          "from": "n1",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n6",
+          "in_index": 0,
+          "in_name": "clip"
+        },
+        {
+          "from": "n1",
+          "out_index": 0,
+          "out_name": "MODEL",
+          "to": "n7",
+          "in_index": 0,
+          "in_name": "model"
+        },
+        {
+          "from": "n9",
+          "out_index": 0,
+          "out_name": "CONDITIONING",
+          "to": "n7",
+          "in_index": 2,
+          "in_name": "negative"
+        },
+        {
+          "from": "n6",
+          "out_index": 0,
+          "out_name": "CONDITIONING",
+          "to": "n7",
+          "in_index": 1,
+          "in_name": "positive"
+        },
+        {
+          "from": "n8",
+          "out_index": 0,
+          "out_name": "LATENT",
+          "to": "n7",
+          "in_index": 3,
+          "in_name": "latent_image"
+        },
+        {
+          "from": "n7",
+          "out_index": 0,
+          "out_name": "LATENT",
+          "to": "n3",
+          "in_index": 0,
+          "in_name": "samples"
+        },
+        {
+          "from": "n2",
+          "out_index": 2,
+          "out_name": "VAE",
+          "to": "n3",
+          "in_index": 1,
+          "in_name": "vae"
+        },
+        {
+          "from": "n3",
+          "out_index": 0,
+          "out_name": "IMAGE",
+          "to": "n4",
+          "in_index": 0,
+          "in_name": "images"
+        },
+        {
+          "from": "n3",
+          "out_index": 0,
+          "out_name": "IMAGE",
+          "to": "n5",
+          "in_index": 0,
+          "in_name": "images"
+        },
+        {
+          "from": "n1",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n9",
+          "in_index": 0,
+          "in_name": "clip"
+        }
+      ],
+      "metadata": {
+        "source": "civicomfy-ui",
+        "created_at": "2025-09-18T09:49:03Z",
+        "updated_at": "2025-09-18T09:49:03Z"
+      }
+    },
+    {
+      "workflow_id": "wf_1758190276376_0",
+      "name": "[ILLUST] Rangiku Matsumoto | Bleach (18/09/2025, 22:11:14)",
+      "node_list": [
+        {
+          "id": "n1",
+          "type": "LoraLoader",
+          "widgets": {
+            "lora_name": "Illustrious\\Rangiku_Matsumoto_Bleach\\v1.0\\matsumoto_rangiku_illust_scarxzys.safetensors",
+            "strength_model": 1,
+            "strength_clip": 1
+          },
+          "title": "Load LoRA",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "LoraLoader"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n2",
+          "type": "CheckpointLoader",
+          "widgets": {
+            "config_name": "anything_v3.yaml",
+            "ckpt_name": "Illustrious\\Illustrij\\v18\\illustrij_v18.safetensors"
+          },
+          "title": "Load Checkpoint With Config (DEPRECATED)",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "CheckpointLoader"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n3",
+          "type": "VAEDecode",
+          "widgets": {},
+          "title": "VAE Decode",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "VAEDecode"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n4",
+          "type": "PreviewImage",
+          "widgets": {},
+          "title": "Preview Image",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "PreviewImage"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n5",
+          "type": "SaveImage",
+          "widgets": {
+            "filename_prefix": "ComfyUI"
+          },
+          "title": "Save Image",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56"
+          },
+          "mode": 4
+        },
+        {
+          "id": "n6",
+          "type": "CLIPTextEncode",
+          "widgets": {
+            "text": "matsumoto rangiku, orange hair, parted bangs, long hair, blue eyes, mole under mouth, necklace, bleach style"
+          },
+          "title": "CLIP Text Encode (Prompt)",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "CLIPTextEncode"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n7",
+          "type": "KSampler",
+          "widgets": {
+            "seed": 301145340501928,
+            "control_after_generate": "randomize",
+            "steps": 20,
+            "cfg": 8,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "denoise": 1
+          },
+          "title": "KSampler",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "KSampler"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n8",
+          "type": "EmptyLatentImage",
+          "widgets": {
+            "width": 512,
+            "height": 768,
+            "batch_size": 1
+          },
+          "title": "Empty Latent Image",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "EmptyLatentImage"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n9",
+          "type": "CLIPTextEncode",
+          "widgets": {
+            "text": ""
+          },
+          "title": "CLIP Text Encode (Prompt)",
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "CLIPTextEncode"
+          },
+          "mode": 0
+        }
+      ],
+      "connections": [
+        {
+          "from": "n2",
+          "out_index": 0,
+          "out_name": "MODEL",
+          "to": "n1",
+          "in_index": 0,
+          "in_name": "model"
+        },
+        {
+          "from": "n2",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n1",
+          "in_index": 1,
+          "in_name": "clip"
+        },
+        {
+          "from": "n1",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n6",
+          "in_index": 0,
+          "in_name": "clip"
+        },
+        {
+          "from": "n1",
+          "out_index": 0,
+          "out_name": "MODEL",
+          "to": "n7",
+          "in_index": 0,
+          "in_name": "model"
+        },
+        {
+          "from": "n9",
+          "out_index": 0,
+          "out_name": "CONDITIONING",
+          "to": "n7",
+          "in_index": 2,
+          "in_name": "negative"
+        },
+        {
+          "from": "n6",
+          "out_index": 0,
+          "out_name": "CONDITIONING",
+          "to": "n7",
+          "in_index": 1,
+          "in_name": "positive"
+        },
+        {
+          "from": "n8",
+          "out_index": 0,
+          "out_name": "LATENT",
+          "to": "n7",
+          "in_index": 3,
+          "in_name": "latent_image"
+        },
+        {
+          "from": "n7",
+          "out_index": 0,
+          "out_name": "LATENT",
+          "to": "n3",
+          "in_index": 0,
+          "in_name": "samples"
+        },
+        {
+          "from": "n2",
+          "out_index": 2,
+          "out_name": "VAE",
+          "to": "n3",
+          "in_index": 1,
+          "in_name": "vae"
+        },
+        {
+          "from": "n3",
+          "out_index": 0,
+          "out_name": "IMAGE",
+          "to": "n4",
+          "in_index": 0,
+          "in_name": "images"
+        },
+        {
+          "from": "n3",
+          "out_index": 0,
+          "out_name": "IMAGE",
+          "to": "n5",
+          "in_index": 0,
+          "in_name": "images"
+        },
+        {
+          "from": "n1",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n9",
+          "in_index": 0,
+          "in_name": "clip"
+        }
+      ],
+      "metadata": {
+        "source": "civicomfy-ui",
+        "created_at": "2025-09-18T10:11:16Z",
+        "updated_at": "2025-09-18T10:11:16Z"
+      }
+    },
+    {
+      "workflow_id": "wf_1758214467066_0",
+      "name": "[ILLUST] Rangiku Matsumoto | Bleach (19/09/2025, 04:54:24)",
+      "node_list": [
+        {
+          "id": "n1",
+          "type": "LoraLoader",
+          "widgets": {
+            "lora_name": "Illustrious\\Rangiku_Matsumoto_Bleach\\v1.0\\matsumoto_rangiku_illust_scarxzys.safetensors",
+            "strength_model": 1,
+            "strength_clip": 1
+          },
+          "title": "Load LoRA",
+          "pos": [
+            458,
+            0
+          ],
+          "size": [
+            270,
+            126
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "LoraLoader"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n2",
+          "type": "CheckpointLoader",
+          "widgets": {
+            "config_name": "anything_v3.yaml",
+            "ckpt_name": "Illustrious\\Illustrij\\v18\\illustrij_v18.safetensors"
+          },
+          "title": "Load Checkpoint With Config (DEPRECATED)",
+          "pos": [
+            0,
+            0
+          ],
+          "size": [
+            389.0806579589844,
+            122
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "CheckpointLoader"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n3",
+          "type": "VAEDecode",
+          "widgets": {},
+          "title": "VAE Decode",
+          "pos": [
+            1500,
+            18
+          ],
+          "size": [
+            140,
+            46
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "VAEDecode"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n4",
+          "type": "PreviewImage",
+          "widgets": {},
+          "title": "Preview Image",
+          "pos": [
+            1660,
+            18
+          ],
+          "size": [
+            260.6566467285156,
+            278.9320983886719
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "PreviewImage"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n5",
+          "type": "SaveImage",
+          "widgets": {
+            "filename_prefix": "ComfyUI"
+          },
+          "title": "Save Image",
+          "pos": [
+            1940,
+            18
+          ],
+          "size": [
+            284.300048828125,
+            265.3506774902344
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56"
+          },
+          "mode": 4
+        },
+        {
+          "id": "n6",
+          "type": "CLIPTextEncode",
+          "widgets": {
+            "text": "matsumoto rangiku, orange hair, parted bangs, long hair, blue eyes, mole under mouth, necklace, bleach style"
+          },
+          "title": "CLIP Text Encode (Prompt)",
+          "pos": [
+            790,
+            11
+          ],
+          "size": [
+            400,
+            200
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "CLIPTextEncode"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n7",
+          "type": "KSampler",
+          "widgets": {
+            "seed": 301145340501928,
+            "control_after_generate": "randomize",
+            "steps": 20,
+            "cfg": 8,
+            "sampler_name": "euler",
+            "scheduler": "simple",
+            "denoise": 1
+          },
+          "title": "KSampler",
+          "pos": [
+            1222,
+            29
+          ],
+          "size": [
+            270,
+            262
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "KSampler"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n8",
+          "type": "EmptyLatentImage",
+          "widgets": {
+            "width": 512,
+            "height": 768,
+            "batch_size": 1
+          },
+          "title": "Empty Latent Image",
+          "pos": [
+            895,
+            524
+          ],
+          "size": [
+            270,
+            106
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "EmptyLatentImage"
+          },
+          "mode": 0
+        },
+        {
+          "id": "n9",
+          "type": "CLIPTextEncode",
+          "widgets": {
+            "text": ""
+          },
+          "title": "CLIP Text Encode (Prompt)",
+          "pos": [
+            789,
+            252
+          ],
+          "size": [
+            400,
+            200
+          ],
+          "flags": {},
+          "properties": {
+            "cnr_id": "comfy-core",
+            "ver": "0.3.56",
+            "Node name for S&R": "CLIPTextEncode"
+          },
+          "mode": 0
+        }
+      ],
+      "connections": [
+        {
+          "from": "n2",
+          "out_index": 0,
+          "out_name": "MODEL",
+          "to": "n1",
+          "in_index": 0,
+          "in_name": "model"
+        },
+        {
+          "from": "n2",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n1",
+          "in_index": 1,
+          "in_name": "clip"
+        },
+        {
+          "from": "n1",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n6",
+          "in_index": 0,
+          "in_name": "clip"
+        },
+        {
+          "from": "n1",
+          "out_index": 0,
+          "out_name": "MODEL",
+          "to": "n7",
+          "in_index": 0,
+          "in_name": "model"
+        },
+        {
+          "from": "n9",
+          "out_index": 0,
+          "out_name": "CONDITIONING",
+          "to": "n7",
+          "in_index": 2,
+          "in_name": "negative"
+        },
+        {
+          "from": "n6",
+          "out_index": 0,
+          "out_name": "CONDITIONING",
+          "to": "n7",
+          "in_index": 1,
+          "in_name": "positive"
+        },
+        {
+          "from": "n8",
+          "out_index": 0,
+          "out_name": "LATENT",
+          "to": "n7",
+          "in_index": 3,
+          "in_name": "latent_image"
+        },
+        {
+          "from": "n7",
+          "out_index": 0,
+          "out_name": "LATENT",
+          "to": "n3",
+          "in_index": 0,
+          "in_name": "samples"
+        },
+        {
+          "from": "n2",
+          "out_index": 2,
+          "out_name": "VAE",
+          "to": "n3",
+          "in_index": 1,
+          "in_name": "vae"
+        },
+        {
+          "from": "n3",
+          "out_index": 0,
+          "out_name": "IMAGE",
+          "to": "n4",
+          "in_index": 0,
+          "in_name": "images"
+        },
+        {
+          "from": "n3",
+          "out_index": 0,
+          "out_name": "IMAGE",
+          "to": "n5",
+          "in_index": 0,
+          "in_name": "images"
+        },
+        {
+          "from": "n1",
+          "out_index": 1,
+          "out_name": "CLIP",
+          "to": "n9",
+          "in_index": 0,
+          "in_name": "clip"
+        }
+      ],
+      "metadata": {
+        "source": "civicomfy-ui",
+        "created_at": "2025-09-18T16:54:27Z",
+        "updated_at": "2025-09-18T16:54:27Z"
+      }
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { app } from "../../../scripts/app.js";
 import { addCssLink } from "./utils/dom.js";
 import { CivitaiDownloaderUI } from "./ui/UI.js";
+import { registerLibrarySearchNode } from "./ui/nodes/librarySearchNode.js";
 
 console.log("Loading Civicomfy UI...");
 
@@ -74,6 +75,10 @@ app.registerExtension({
         console.log(`[${EXTENSION_NAME}] Setting up Civicomfy Extension...`);
         addCssLink(CSS_URL);
         addMenuButton();
+        try {
+            const LG = window?.LiteGraph;
+            if (LG) registerLibrarySearchNode(appInstance, LG);
+        } catch (e) { console.warn(`[${EXTENSION_NAME}] Failed to register LibrarySearch node:`, e); }
 
         // Optional: Pre-check placeholder image
         fetch(PLACEHOLDER_IMAGE_URL)

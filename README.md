@@ -34,6 +34,42 @@ ComfyUI Manager
 4. Click the download button on any model to save it to your local installation
 5. Models become immediately available in ComfyUI nodes
 
+### Library-First Workflows (New)
+
+This extension adds a lightweight, add-only workflow system and card-scoped bindings:
+
+- Add to ComfyUI: Inserts one node pre-initialized with the model from a Library card. Card-specific binding is preferred when present; otherwise settings-based mapping is used.
+- Workflow menu: Each Library card has a Workflow button with
+  - Add a saved workflow: choose a saved workflow, preview affected nodes and model bindings, and append it to the current canvas.
+  - Save current workspace as workflow: saves currently selected nodes and their connections as a named workflow and attaches it to the card.
+
+Workflows and attachments are persisted under the extension folder as JSON.
+
+Storage files:
+- `workflows.json`: { version, workflows: [ { workflow_id, name, node_list, connections, metadata } ] }
+- `card_meta.json`: { version, cards: { <download_id>: { workflow_ids:[], single_node_binding:{ node_type, widget } } } }
+
+Minimal REST API:
+- `GET /civitai/workflows?card_id=<optional>` → { workflows:[{ workflow_id, name, node_count, connection_count, metadata }] }
+- `GET /civitai/workflows/{workflow_id}` → { workflow }
+- `POST /civitai/workflows` body { workflow_id?, name, node_list, connections, metadata? } → { success, workflow_id }
+- `DELETE /civitai/workflows/{workflow_id}` → { success }
+- `GET /civitai/cards/{card_id}/workflows` → { card_id, workflow_ids, single_node_binding, workflows:[summary] }
+- `POST /civitai/cards/{card_id}/attach_workflow` body { workflow_id } → { success, card }
+- `POST /civitai/cards/{card_id}/detach_workflow` body { workflow_id } → { success, card }
+- `POST /civitai/cards/{card_id}/set_binding` body { node_type, widget? } → { success, card }
+- `GET /civitai/workflows/export` → full workflows JSON
+- `POST /civitai/workflows/import` body { workflows:[...] } → { success, count }
+
+Frontend behavior:
+- Saving captures type, widgets, positions, and connections between selected nodes.
+- Applying creates fresh node instances and re-links them; existing nodes are untouched. Optional external links are honored if defined in `workflow.metadata.external_links`.
+- Model references in widgets are resolved by filename against the Library with a preview and replacement selectors for missing models.
+
+Notes:
+- Running the same workflow multiple times creates distinct node instances each time.
+- This update does not remove or modify existing settings/features.
+
 ## Configuration
 
 - Enter your Civitai API Token in the setting

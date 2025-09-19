@@ -4,6 +4,7 @@ import { handleSearchSubmit, initSearchHandlers } from "./handlers/searchHandler
 import { handleSettingsSave, loadAndApplySettings, loadSettingsFromCookie, saveSettingsToCookie, applySettings, getDefaultSettings } from "./handlers/settingsHandler.js";
 import { startStatusUpdates, stopStatusUpdates, updateStatus, handleCancelDownload, handleRetryDownload, handleOpenPath } from "./handlers/statusHandler.js";
 import { renderSearchResults as renderSearchCards } from "./searchRenderer.js";
+import { showDetailsModal } from "./detailsModal.js";
 import { renderLibraryList } from "./libraryRenderer.js";
 import { modalTemplate } from "./templates.js";
 import { CivitaiDownloaderAPI } from "../api/civitai.js";
@@ -77,6 +78,13 @@ export class CivitaiDownloaderUI {
         this.settingsNsfwThresholdInput = this.modal.querySelector('#civitai-settings-nsfw-threshold');
         this.settingsSaveButton = this.modal.querySelector('#civitai-settings-save');
 
+        // Node Mapping (Settings)
+        this.nodeMappingTypeContainer = this.modal.querySelector('#civitai-node-mapping-type');
+        this.nodeMappingBaseContainer = this.modal.querySelector('#civitai-node-mapping-base');
+        this.refreshNodesButton = this.modal.querySelector('#civitai-refresh-nodes');
+        this.nodeSearchTypeInput = this.modal.querySelector('#civitai-node-search-type');
+        this.nodeSearchBaseInput = this.modal.querySelector('#civitai-node-search-base');
+
         // Toast Notification
         this.toastElement = this.modal.querySelector('#civitai-toast');
 
@@ -97,6 +105,10 @@ export class CivitaiDownloaderUI {
         await this.populateModelTypes();
         await this.populateBaseModels();
         this.loadAndApplySettings();
+        // Build mapping UI now that types and base models are known
+        this.populateNodeMappingUI();
+        if (this.nodeSearchTypeInput) this.nodeSearchTypeInput.addEventListener('input', () => this.populateNodeMappingUI());
+        if (this.nodeSearchBaseInput) this.nodeSearchBaseInput.addEventListener('input', () => this.populateNodeMappingUI());
         await this.loadLibraryItems(true);
     }
 
@@ -251,6 +263,10 @@ export class CivitaiDownloaderUI {
                 this.updateStatus();
             },
             onRequireApiKey: () => this.switchTab('settings'),
+            onShowDetails: (details, card) => {
+                try { this.ensureFontAwesome(); } catch (e) {}
+                showDetailsModal(this, details, card);
+            },
         });
     }
 
@@ -532,6 +548,48 @@ export class CivitaiDownloaderUI {
         pathEl.classList.add('civi-clickable-path');
         pathEl.title = 'Open containing folder';
         if (card.dataset) card.dataset.localPath = text;
+    }
+
+    async openDetailsForModel(modelId, versionId = null) {
+        try {
+            const payload = {
+                model_url_or_id: modelId,
+                model_version_id: versionId ? Number(versionId) : null,
+                api_key: this.settings?.apiKey || '',
+            };
+            const details = await CivitaiDownloaderAPI.getModelDetails(payload);
+            if (!details || details.success === false) {
+                const message = details?.details || details?.error || 'Failed to load details';
+                this.showToast(message, 'error');
+                return;
+            }
+            try { this.ensureFontAwesome(); } catch (e) {}
+            showDetailsModal(this, details, null);
+        } catch (error) {
+            console.error('Open details error', error);
+            this.showToast(error?.details || error?.message || 'Failed to open details', 'error');
+        }
+    }
+
+    async openLibraryDetails(item) {
+        if (!item) return;
+        // Prefer local offline details when available
+        if (item.metadata_path) {
+            try {
+                const details = await CivitaiDownloaderAPI.getLocalDetails({ metadata_path: item.metadata_path });
+                if (details && details.success !== false) {
+                    try { this.ensureFontAwesome(); } catch (e) {}
+                    showDetailsModal(this, details, null);
+                    return;
+                }
+            } catch (e) {
+                console.warn('[Civicomfy] Local details failed, falling back to online:', e);
+            }
+        }
+        // Fallback to online call
+        const mid = item.model_id || item.modelId;
+        const vid = item.version_id || item.versionId;
+        await this.openDetailsForModel(mid, vid ? Number(vid) : null);
     }
 
     async loadLibraryItems(showLoading = false) {
@@ -845,4 +903,725 @@ export class CivitaiDownloaderUI {
     handleCancelDownload = (downloadId, button) => handleCancelDownload(this, downloadId, button);
     handleRetryDownload = (downloadId, button) => handleRetryDownload(this, downloadId, button);
     handleOpenPath = (downloadId, button) => handleOpenPath(this, downloadId, button);
+
+    // --- Node mapping helpers ---
+    getAvailableNodeTypes() {
+        try {
+            const lg = window?.LiteGraph;
+            if (!lg || !lg.registered_node_types) return [];
+            const keys = Object.keys(lg.registered_node_types);
+            const items = keys.map(k => ({ value: k, label: k }));
+            items.sort((a,b)=> a.label.localeCompare(b.label));
+            return items;
+        } catch (e) {
+            console.warn('[Civicomfy] Failed to enumerate nodes:', e);
+            return [];
+        }
+    }
+
+    populateNodeMappingUI() {
+        const nodes = this.getAvailableNodeTypes();
+        const current = this.settings?.nodeMappings || { byType: {}, byBase: {} };
+        if (this.nodeMappingTypeContainer) {
+            const types = Object.entries(this.modelTypes || {});
+            const frag = document.createDocumentFragment();
+            const filter = (this.nodeSearchTypeInput?.value || '').toLowerCase();
+            const filteredNodes = filter ? nodes.filter(n => n.label.toLowerCase().includes(filter)) : nodes;
+            types.forEach(([key, label]) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap;';
+                const name = document.createElement('div');
+                name.style.cssText = 'flex:0 0 180px;opacity:0.9;';
+                name.textContent = label || key;
+                const select = document.createElement('select');
+                select.className = 'civitai-select civitai-node-select-type';
+                select.dataset.typeKey = key;
+                const empty = document.createElement('option');
+                empty.value = '';
+                empty.textContent = '(none)';
+                select.appendChild(empty);
+                filteredNodes.forEach(n => {
+                    const opt = document.createElement('option');
+                    opt.value = n.value;
+                    opt.textContent = n.label;
+                    select.appendChild(opt);
+                });
+                const cur = current.byType && current.byType[key];
+                const curNode = (cur && typeof cur === 'object') ? cur.node : cur;
+                const curWidget = (cur && typeof cur === 'object') ? (cur.widget || '') : '';
+                if (curNode) select.value = curNode;
+                const widget = document.createElement('input');
+                widget.type = 'text';
+                widget.className = 'civitai-input civitai-widget-input-type';
+                widget.placeholder = 'widget name (e.g., ckpt_name)';
+                widget.dataset.typeKey = key;
+                widget.value = curWidget;
+                row.appendChild(name);
+                row.appendChild(select);
+                row.appendChild(widget);
+                frag.appendChild(row);
+            });
+            this.nodeMappingTypeContainer.innerHTML = '';
+            this.nodeMappingTypeContainer.appendChild(frag);
+        }
+        if (this.nodeMappingBaseContainer) {
+            const bases = Array.isArray(this.baseModels) ? this.baseModels : [];
+            const frag = document.createDocumentFragment();
+            const filter = (this.nodeSearchBaseInput?.value || '').toLowerCase();
+            const filteredNodes = filter ? nodes.filter(n => n.label.toLowerCase().includes(filter)) : nodes;
+            bases.forEach((bm) => {
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:8px;align-items:center;margin:4px 0;flex-wrap:wrap;';
+                const name = document.createElement('div');
+                name.style.cssText = 'flex:0 0 180px;opacity:0.9;';
+                name.textContent = bm;
+                const select = document.createElement('select');
+                select.className = 'civitai-select civitai-node-select-base';
+                select.dataset.baseName = bm;
+                const empty = document.createElement('option');
+                empty.value = '';
+                empty.textContent = '(none)';
+                select.appendChild(empty);
+                filteredNodes.forEach(n => {
+                    const opt = document.createElement('option');
+                    opt.value = n.value;
+                    opt.textContent = n.label;
+                    select.appendChild(opt);
+                });
+                const cur = current.byBase && current.byBase[bm];
+                const curNode = (cur && typeof cur === 'object') ? cur.node : cur;
+                const curWidget = (cur && typeof cur === 'object') ? (cur.widget || '') : '';
+                if (curNode) select.value = curNode;
+                const widget = document.createElement('input');
+                widget.type = 'text';
+                widget.className = 'civitai-input civitai-widget-input-base';
+                widget.placeholder = 'widget name (e.g., ckpt_name)';
+                widget.dataset.baseName = bm;
+                widget.value = curWidget;
+                row.appendChild(name);
+                row.appendChild(select);
+                row.appendChild(widget);
+                frag.appendChild(row);
+            });
+            this.nodeMappingBaseContainer.innerHTML = '';
+            this.nodeMappingBaseContainer.appendChild(frag);
+        }
+        if (this.refreshNodesButton) {
+            this.refreshNodesButton.onclick = () => this.populateNodeMappingUI();
+        }
+    }
+
+    readNodeMappingsFromUI() {
+        const byType = {};
+        const byBase = {};
+        this.modal.querySelectorAll('.civitai-node-select-type').forEach(sel => {
+            const key = sel.dataset.typeKey;
+            if (!key) return;
+            const val = sel.value || '';
+            if (val) {
+                const widget = this.modal.querySelector(`.civitai-widget-input-type[data-type-key="${key}"]`);
+                const wval = (widget?.value || '').trim();
+                byType[key] = wval ? { node: val, widget: wval } : { node: val };
+            }
+        });
+        this.modal.querySelectorAll('.civitai-node-select-base').forEach(sel => {
+            const key = sel.dataset.baseName;
+            if (!key) return;
+            const val = sel.value || '';
+            if (val) {
+                const widget = this.modal.querySelector(`.civitai-widget-input-base[data-base-name="${key}"]`);
+                const wval = (widget?.value || '').trim();
+                byBase[key] = wval ? { node: val, widget: wval } : { node: val };
+            }
+        });
+        return { byType, byBase };
+    }
+
+    async addToComfyUI(item) {
+        const typeKey = (item?.model_type || '').toLowerCase();
+        const baseKey = item?.base_model || '';
+        // Prefer card-scoped single-node binding if present
+        let nodeType = '';
+        let widgetOverride = '';
+        try {
+            const meta = await CivitaiDownloaderAPI.getCardWorkflows(item.id);
+            const bind = meta?.single_node_binding;
+            if (bind && typeof bind === 'object' && bind.node_type) {
+                nodeType = String(bind.node_type);
+                widgetOverride = String(bind.widget || '');
+            }
+        } catch (e) {
+            // ignore; fall back to settings mapping
+        }
+        if (!nodeType) {
+            const maps = this.settings?.nodeMappings || { byType: {}, byBase: {} };
+            const mapping = maps.byType?.[typeKey] || (baseKey ? maps.byBase?.[baseKey] : '');
+            nodeType = (mapping && typeof mapping === 'object') ? mapping.node : mapping;
+            widgetOverride = (mapping && typeof mapping === 'object') ? (mapping.widget || '') : '';
+        }
+        if (!nodeType) {
+            this.showToast('No node mapping found. Attach a workflow binding via the card Workflow menu or set a mapping in Settings.', 'error', 6000);
+            return;
+        }
+        const ok = this.insertNodeWithModel(nodeType, item, widgetOverride);
+        if (ok) this.showToast('Added node to ComfyUI', 'success');
+        else this.showToast('Failed adding node to ComfyUI. Check mapping and console.', 'error', 6000);
+    }
+
+    insertNodeWithModel(nodeType, item, widgetOverride = '') {
+        try {
+            const app = window?.app;
+            const LG = window?.LiteGraph;
+            if (!app || !LG) {
+                console.warn('[Civicomfy] ComfyUI app/LiteGraph not available');
+                return false;
+            }
+            let node = null;
+            try {
+                node = LG.createNode(nodeType);
+            } catch (e) {
+                const tail = String(nodeType).split('/').pop();
+                try { node = LG.createNode(tail); } catch (_) {}
+            }
+            if (!node) {
+                console.warn('[Civicomfy] Could not create node:', nodeType);
+                return false;
+            }
+            // Position near selected node if any, otherwise center
+            let sx = null, sy = null;
+            try {
+                const selected = (app.graph?._nodes || []).find(n => n?.selected);
+                if (selected && Array.isArray(selected.pos)) { sx = selected.pos[0]; sy = selected.pos[1]; }
+            } catch (_) {}
+            const cx = (sx ?? (app.canvas?.canvas?.width || 1200) * 0.5) + (Math.random()*40-20);
+            const cy = (sy ?? (app.canvas?.canvas?.height || 800) * 0.5) + (Math.random()*40-20);
+            node.pos = [cx, cy];
+
+            const filePath = item?.path || '';
+            const baseName = String(filePath).split(/\\|\//).pop();
+            const typeKey = (item?.model_type || '').toLowerCase();
+            const widgetCandidatesByType = {
+                checkpoint: ['ckpt_name','model','checkpoint','checkpoint_name'],
+                lora: ['lora_name','lora','model','weight_model'],
+                locon: ['lora_name','lora','model'],
+                lycoris: ['lora_name','lora','model'],
+                vae: ['vae_name','vae','model'],
+                embedding: ['embedding_name','embedding'],
+                controlnet: ['control_net_name','controlnet','model'],
+                upscaler: ['upscale_model','upscaler','model'],
+                unet: ['unet_name','unet','model'],
+                diffusionmodels: ['model','ckpt_name'],
+                other: ['model','file','path'],
+            };
+            const widgetNames = widgetOverride ? [String(widgetOverride)] : (widgetCandidatesByType[typeKey] || ['model','ckpt_name','lora_name']);
+            const widgets = Array.isArray(node.widgets) ? node.widgets : [];
+            for (const target of widgetNames) {
+                const w = widgets.find(w => String(w.name||'').toLowerCase() === target);
+                if (w) {
+                    const values = Array.isArray(w.options?.values) ? w.options.values : null;
+                    if (values && values.length) {
+                        const match = values.find(v => String(v).split(/\\|\//).pop() === baseName) || values.find(v => String(v) === baseName);
+                        if (match) w.value = match; else w.value = baseName;
+                    } else {
+                        w.value = baseName;
+                    }
+                    break;
+                }
+            }
+
+            app.graph.add(node);
+            app.graph.setDirtyCanvas(true,true);
+            return true;
+        } catch (e) {
+            console.error('[Civicomfy] insertNodeWithModel failed', e);
+            return false;
+        }
+    }
+
+    // ---- Workflow Popup and Actions ----
+    async openWorkflowPopup(item) {
+        const existing = document.getElementById('civitai-workflow-popup');
+        if (existing) existing.remove();
+        const pop = document.createElement('div');
+        pop.id = 'civitai-workflow-popup';
+        pop.className = 'civitai-confirmation-modal';
+        pop.innerHTML = `
+          <div class="civitai-confirmation-modal-content" role="dialog" aria-modal="true" aria-labelledby="civi-wf-title">
+            <h4 id=\"civi-wf-title\">Workflow</h4>
+            <div class="civitai-form-group" style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="civitai-button primary" id="civi-wf-apply">Add a saved workflow</button>
+              <button class="civitai-button" id="civi-wf-save">Save current workspace as workflow</button>
+            </div>
+            <div id="civi-wf-area"></div>
+            <div class="civitai-confirmation-modal-actions" style="justify-content:flex-end;">
+              <button class="civitai-button" id="civi-wf-close">Close</button>
+            </div>
+          </div>`;
+        document.body.appendChild(pop);
+        // Make confirmation modal visible (CSS default is display:none)
+        try { pop.style.display = 'flex'; } catch (_) {}
+        const close = () => pop.remove();
+        pop.querySelector('#civi-wf-close')?.addEventListener('click', close);
+
+        pop.querySelector('#civi-wf-apply')?.addEventListener('click', () => this.openApplyWorkflowUI(item, pop.querySelector('#civi-wf-area')));
+        pop.querySelector('#civi-wf-save')?.addEventListener('click', () => this.openSaveWorkflowUI(item, pop.querySelector('#civi-wf-area')));
+    }
+
+    async openSaveWorkflowUI(item, container) {
+        const selected = this.captureSelectedNodes();
+        if (!selected || selected.node_list.length === 0) {
+            container.innerHTML = '<p style="color:#ffb4b4;">Select one or more nodes in the canvas to save as a workflow.</p>';
+            return;
+        }
+        const defaultName = `${item?.model_name || 'Workflow'} (${new Date().toLocaleString()})`;
+        container.innerHTML = `
+          <div class="civitai-form-group">
+            <label>Workflow Name</label>
+            <input type="text" id="civi-wf-name" class="civitai-input" value="${defaultName.replace(/"/g,'&quot;')}">
+          </div>
+          <div class="civitai-form-group">
+            <div>Preview: ${selected.node_list.length} nodes, ${selected.connections.length} connections</div>
+          </div>
+          <div class="civitai-form-group">
+            <button class="civitai-button primary" id="civi-wf-save-confirm">Save & Attach to Card</button>
+          </div>`;
+        container.querySelector('#civi-wf-save-confirm')?.addEventListener('click', async () => {
+            const name = container.querySelector('#civi-wf-name')?.value?.trim();
+            if (!name) { this.showToast('Enter a workflow name', 'error'); return; }
+            try {
+                const res = await CivitaiDownloaderAPI.saveWorkflow({ name, node_list: selected.node_list, connections: selected.connections, metadata: { source: 'civicomfy-ui' } });
+                if (res?.workflow_id) {
+                    await CivitaiDownloaderAPI.attachWorkflowToCard(item.id, res.workflow_id);
+                    this.showToast('Workflow saved and attached', 'success');
+                } else {
+                    this.showToast('Failed to save workflow', 'error');
+                }
+            } catch (e) {
+                this.showToast(e?.details || e?.message || 'Save failed', 'error');
+            }
+        });
+    }
+
+    async openApplyWorkflowUI(item, container) {
+        container.innerHTML = '<p><i class="fas fa-spinner fa-spin"></i> Loading workflows...</p>';
+        this.ensureFontAwesome();
+        let list = [];
+        try {
+            const resp = await CivitaiDownloaderAPI.listWorkflows();
+            list = Array.isArray(resp?.workflows) ? resp.workflows : [];
+        } catch (e) {
+            container.innerHTML = `<p style="color:#ffb4b4;">Failed to load workflows: ${String(e?.details||e?.message||e)}</p>`;
+            return;
+        }
+        if (list.length === 0) {
+            container.innerHTML = '<p>No saved workflows yet.</p>';
+            return;
+        }
+        const area = document.createElement('div');
+        const search = document.createElement('input');
+        search.type = 'text';
+        search.placeholder = 'Search workflows...';
+        search.className = 'civitai-input';
+        const allowConnect = document.createElement('label');
+        allowConnect.style.cssText = 'display:flex;align-items:center;gap:8px;margin:8px 0;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.id = 'civi-wf-connect-existing';
+        allowConnect.appendChild(cb);
+        const span = document.createElement('span');
+        span.textContent = 'Allow connecting to existing nodes (if workflow defines it)';
+        allowConnect.appendChild(span);
+        const ul = document.createElement('div');
+        ul.style.cssText = 'max-height:260px;overflow:auto;border:1px solid #444;margin-top:8px;';
+        const preview = document.createElement('div');
+        preview.style.cssText = 'margin-top:10px;';
+        area.appendChild(search);
+        area.appendChild(allowConnect);
+        area.appendChild(ul);
+        area.appendChild(preview);
+
+        const renderList = (items) => {
+            ul.innerHTML = '';
+            items.forEach((wf) => {
+                const row = document.createElement('div');
+                row.className = 'civitai-list-row';
+                row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:6px 10px;gap:10px;';
+                const left = document.createElement('div');
+                left.innerHTML = `<strong>${wf.name || '(unnamed)'}</strong><div style="opacity:0.7;font-size:0.9em;">${wf.node_count||0} nodes, ${wf.connection_count||0} connections</div>`;
+                const applyBtn = document.createElement('button');
+                applyBtn.className = 'civitai-button small';
+                applyBtn.textContent = 'Preview & Add';
+                applyBtn.addEventListener('click', async () => {
+                    const full = await CivitaiDownloaderAPI.getWorkflow(wf.workflow_id).catch(()=>null);
+                    if (!full || !full.workflow) { this.showToast('Failed to fetch workflow', 'error'); return; }
+                    this.renderWorkflowPreview(full.workflow, preview, { allowConnect: cb.checked });
+                });
+                row.appendChild(left);
+                row.appendChild(applyBtn);
+                ul.appendChild(row);
+            });
+        };
+        renderList(list);
+        search.addEventListener('input', () => {
+            const q = search.value.toLowerCase();
+            const filtered = list.filter(x => (x.name||'').toLowerCase().includes(q));
+            renderList(filtered);
+        });
+
+        container.innerHTML = '';
+        container.appendChild(area);
+    }
+
+    renderWorkflowPreview(workflow, container, opts = {}) {
+        const nodes = Array.isArray(workflow?.node_list) ? workflow.node_list : [];
+        const conns = Array.isArray(workflow?.connections) ? workflow.connections : [];
+        const refs = this.extractModelReferences(nodes);
+        const unresolved = { ...refs.byName };
+        // Build resolver UI
+        const section = document.createElement('div');
+        section.innerHTML = `
+          <div><strong>Preview:</strong> ${nodes.length} nodes, ${conns.length} connections</div>
+          <div style="margin-top:6px;">Model bindings found: ${Object.keys(refs.byName).length}</div>
+        `;
+        const resolver = document.createElement('div');
+        resolver.style.cssText = 'margin:8px 0;';
+        const libItemsPromise = this.ensureLibraryLoaded();
+        const form = document.createElement('div');
+        form.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+        const selectFor = (label, key, candidates) => {
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:8px;align-items:center;';
+            const span = document.createElement('span');
+            span.textContent = label;
+            const sel = document.createElement('select');
+            sel.className = 'civitai-select';
+            const none = document.createElement('option');
+            none.value = '';
+            none.textContent = '(leave unchanged)';
+            sel.appendChild(none);
+            candidates.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.path || c.filename || c.id;
+                opt.textContent = `${c.model_name || c.filename || c.path || c.id}`;
+                sel.appendChild(opt);
+            });
+            sel.addEventListener('change', () => { unresolved[key] = sel.value || refs.byName[key]; });
+            row.appendChild(span);
+            row.appendChild(sel);
+            return row;
+        };
+
+        libItemsPromise.then(() => {
+            const lib = Array.isArray(this.libraryItems) ? this.libraryItems : [];
+            const byBase = (name) => lib.filter(i => String(i.filename||'').toLowerCase().includes(String(name).toLowerCase()) || String(i.path||'').toLowerCase().includes(String(name).toLowerCase()));
+            Object.keys(refs.byName).forEach(key => {
+                const candidates = byBase(key).sort((a,b) => new Date(b.downloaded_at||0) - new Date(a.downloaded_at||0));
+                const row = selectFor(`Resolve '${key}' to:`, key, candidates);
+                const sel = row.querySelector('select');
+                if (candidates[0]) {
+                    sel.value = candidates[0].path || candidates[0].filename || candidates[0].id;
+                    unresolved[key] = sel.value;
+                }
+                form.appendChild(row);
+            });
+        });
+
+        const applyBtn = document.createElement('button');
+        applyBtn.className = 'civitai-button primary';
+        applyBtn.textContent = 'Add Workflow to Canvas';
+        applyBtn.addEventListener('click', () => {
+            const replacements = unresolved; // map original->selected/unchanged
+            this.applyWorkflowToWorkspace(workflow, { replacements, allowExternal: !!opts.allowConnect });
+            this.showToast('Workflow nodes added', 'success');
+        });
+
+        container.innerHTML = '';
+        resolver.appendChild(form);
+        section.appendChild(resolver);
+        section.appendChild(applyBtn);
+        container.appendChild(section);
+        this.ensureFontAwesome();
+    }
+
+    async ensureLibraryLoaded() {
+        if (!this.libraryLoaded) {
+            try { await this.loadLibraryItems(false); } catch(_) {}
+        }
+        return this.libraryItems;
+    }
+
+    extractModelReferences(node_list = []) {
+        const byName = {};
+        const candidates = ['ckpt','model','vae','lora','embedding','control','unet','file','path'];
+        for (const n of node_list) {
+            const w = n?.widgets || {};
+            for (const [k,v] of Object.entries(w)) {
+                if (typeof v === 'string') {
+                    const lk = k.toLowerCase();
+                    if (candidates.some(c => lk.includes(c))) {
+                        const base = String(v).split(/\\|\//).pop();
+                        if (base) byName[base] = base;
+                    }
+                }
+            }
+        }
+        return { byName };
+    }
+
+    captureSelectedNodes() {
+        try {
+            const app = window?.app;
+            const graph = app?.graph;
+            if (!graph) return { node_list: [], connections: [] };
+            const all = Array.isArray(graph._nodes) ? graph._nodes : [];
+            const selected = all.filter(n => n?.selected);
+            if (selected.length === 0) return { node_list: [], connections: [] };
+
+            // Robust vec2 readers (support arrays, typed arrays, or objects with x/y)
+            const readVec2 = (v) => {
+                try {
+                    if (v && Number.isFinite(v[0]) && Number.isFinite(v[1])) return [Number(v[0]), Number(v[1])];
+                } catch (_) {}
+                try {
+                    if (v && Number.isFinite(v?.x) && Number.isFinite(v?.y)) return [Number(v.x), Number(v.y)];
+                } catch (_) {}
+                return null;
+            };
+
+            // Compute selection bounding box to normalize positions (store relative layout)
+            let minX = Infinity, minY = Infinity;
+            const rawPos = new Map(); // node.id -> [x,y]
+            for (const n of selected) {
+                const p = readVec2(n?.pos) || [0, 0];
+                rawPos.set(n.id, p);
+                if (p[0] < minX) minX = p[0];
+                if (p[1] < minY) minY = p[1];
+            }
+            if (!Number.isFinite(minX)) minX = 0;
+            if (!Number.isFinite(minY)) minY = 0;
+
+            const idMap = new Map();
+            const node_list = selected.map((n, idx) => {
+                idMap.set(n.id, `n${idx + 1}`);
+                const widgets = {};
+                (Array.isArray(n.widgets) ? n.widgets : []).forEach(w => { if (w && w.name) widgets[w.name] = w.value; });
+                const sz = readVec2(n?.size);
+                const posAbs = rawPos.get(n.id) || [0, 0];
+                const posRel = [Math.round(posAbs[0] - minX), Math.round(posAbs[1] - minY)];
+                const flags = (n.flags && typeof n.flags === 'object') ? { ...n.flags } : undefined;
+                const properties = (n.properties && typeof n.properties === 'object') ? { ...n.properties } : undefined;
+                const mode = (typeof n.mode === 'number') ? n.mode : undefined;
+                return {
+                    id: idMap.get(n.id),
+                    type: n.type,
+                    widgets,
+                    title: n.title || '',
+                    pos: posRel,
+                    size: sz || undefined,
+                    flags,
+                    properties,
+                    mode,
+                };
+            });
+
+            // Internal connections among selected nodes only
+            const linksObj = graph.links || {};
+            const connections = [];
+            for (const lid in linksObj) {
+                const link = linksObj[lid];
+                const a = idMap.get(link.origin_id);
+                const b = idMap.get(link.target_id);
+                if (!a || !b) continue;
+                const origin = selected.find(n => n.id === link.origin_id);
+                const target = selected.find(n => n.id === link.target_id);
+                const out_name = origin?.outputs?.[link.origin_slot]?.name || '';
+                const in_name = target?.inputs?.[link.target_slot]?.name || '';
+                connections.push({ from: a, out_index: link.origin_slot, out_name, to: b, in_index: link.target_slot, in_name });
+            }
+
+            // Optionally capture external links for later reconnection
+            const external_links = [];
+            for (const lid in linksObj) {
+                const link = linksObj[lid];
+                const a = idMap.get(link.origin_id);
+                const b = idMap.get(link.target_id);
+                if (a && !b) {
+                    const origin = selected.find(n => n.id === link.origin_id);
+                    const out_name = origin?.outputs?.[link.origin_slot]?.name || '';
+                    external_links.push({ from_local_id: a, out_index: link.origin_slot, out_name, to_by_title: null, to_by_type: null, in_index: null, in_name: null });
+                } else if (!a && b) {
+                    const target = selected.find(n => n.id === link.target_id);
+                    const in_name = target?.inputs?.[link.target_slot]?.name || '';
+                    external_links.push({ from_local_id: null, out_index: null, out_name: null, to_by_title: target?.title || null, to_by_type: target?.type || null, in_index: link.target_slot, in_name });
+                }
+            }
+
+            return { node_list, connections, metadata: { saved_at: new Date().toISOString(), external_links } };
+        } catch (e) {
+            console.warn('[Civicomfy] captureSelectedNodes failed:', e);
+            return { node_list: [], connections: [] };
+        }
+    }
+
+    applyWorkflowToWorkspace(workflow, options = {}) {
+        try {
+            const app = window?.app;
+            const LG = window?.LiteGraph;
+            if (!app || !LG) throw new Error('ComfyUI not ready');
+            const nodes = Array.isArray(workflow?.node_list) ? workflow.node_list : [];
+            const conns = Array.isArray(workflow?.connections) ? workflow.connections : [];
+            const replacements = options.replacements || {};
+            const created = new Map(); // local id -> node
+            const offset = this._placementOffset();
+            const occupied = this._gatherOccupiedRects();
+
+            // Fallback spacing if saved workflow is missing positions (older saves)
+            const hasAnyPos = nodes.some(s => Array.isArray(s?.pos) && Number.isFinite(s.pos[0]) && Number.isFinite(s.pos[1]));
+            if (!hasAnyPos) {
+                const colW = 240, rowH = 180, cols = 4;
+                nodes.forEach((s, i) => { s.pos = [ (i % cols) * colW, Math.floor(i / cols) * rowH ]; });
+            }
+            for (const spec of nodes) {
+                let node = null;
+                try { node = LG.createNode(spec.type); } catch (_) {}
+                if (!node) continue;
+                const basePos = Array.isArray(spec.pos) ? spec.pos : [0,0];
+                // Restore size before collision checks
+                if (Array.isArray(spec.size) && spec.size.length === 2) {
+                    try { node.size = [spec.size[0], spec.size[1]]; } catch (_) {}
+                }
+                let desired = [basePos[0] + offset[0], basePos[1] + offset[1]];
+                const size = (Array.isArray(node.size) && node.size.length === 2) ? node.size : (Array.isArray(spec.size) ? spec.size : [160, 80]);
+                desired = this._avoidCollision(desired, size, occupied);
+                node.pos = desired;
+                const widgets = Array.isArray(node.widgets) ? node.widgets : [];
+                const wmap = spec.widgets || {};
+                widgets.forEach(w => {
+                    if (!w || !w.name) return;
+                    let val = wmap[w.name];
+                    if (typeof val === 'string') {
+                        const base = String(val).split(/\\|\//).pop();
+                        if (replacements[base]) val = replacements[base];
+                    }
+                    if (val !== undefined) w.value = val;
+                });
+                // Restore title if present
+                if (spec.title && typeof spec.title === 'string') {
+                    try { node.title = spec.title; } catch (_) {}
+                }
+                // Restore properties if present
+                if (spec.properties && typeof spec.properties === 'object') {
+                    node.properties = node.properties && typeof node.properties === 'object' ? node.properties : {};
+                    for (const [k,v] of Object.entries(spec.properties)) {
+                        try { node.properties[k] = v; } catch (_) {}
+                    }
+                }
+                // Restore flags (e.g., collapsed/pinned/bypass)
+                if (spec.flags && typeof spec.flags === 'object') {
+                    node.flags = node.flags && typeof node.flags === 'object' ? node.flags : {};
+                    for (const [k,v] of Object.entries(spec.flags)) {
+                        try { node.flags[k] = v; } catch (_) {}
+                    }
+                }
+                // Restore mode if numeric
+                if (typeof spec.mode === 'number') {
+                    try { node.mode = spec.mode; } catch (_) {}
+                }
+                app.graph.add(node);
+                created.set(spec.id, node);
+                // Track occupied rect for subsequent nodes
+                occupied.push({ x: node.pos[0], y: node.pos[1], w: (node.size?.[0]||160), h: (node.size?.[1]||80) });
+            }
+            // Recreate connections between newly-created nodes
+            for (const c of conns) {
+                const a = created.get(c.from);
+                const b = created.get(c.to);
+                if (!a || !b) continue;
+                const outIndex = Number.isFinite(c.out_index) ? c.out_index : (a.outputs||[]).findIndex(o => o?.name === c.out_name);
+                const inIndex = Number.isFinite(c.in_index) ? c.in_index : (b.inputs||[]).findIndex(i => i?.name === c.in_name);
+                if (outIndex >= 0 && inIndex >= 0) {
+                    try { a.connect(outIndex, b, inIndex); } catch (e) { console.warn('connect failed', e); }
+                }
+            }
+            // Optional external connections
+            if (options.allowExternal && workflow?.metadata?.external_links && Array.isArray(workflow.metadata.external_links)) {
+                this._connectToExisting(workflow.metadata.external_links, created);
+            }
+            app.graph.setDirtyCanvas(true, true);
+        } catch (e) {
+            console.error('[Civicomfy] applyWorkflowToWorkspace error:', e);
+        }
+    }
+
+    _placementOffset() {
+        try {
+            const app = window?.app;
+            const selected = (app?.graph?._nodes || []).find(n => n?.selected);
+            if (selected && Array.isArray(selected.pos)) {
+                return [Math.round(selected.pos[0] + 200 + (Math.random()*40-20)), Math.round(selected.pos[1] + (Math.random()*40-20))];
+            }
+            const canvas = app?.canvas?.canvas;
+            const w = (canvas?.width || 1200);
+            const h = (canvas?.height || 800);
+            return [Math.round(w*0.5 + (Math.random()*60-30)), Math.round(h*0.5 + (Math.random()*60-30))];
+        } catch (_) { return [0,0]; }
+    }
+
+    _connectToExisting(externals = [], createdMap) {
+        try {
+            const app = window?.app;
+            const all = Array.isArray(app?.graph?._nodes) ? app.graph._nodes : [];
+            const findBy = (pred) => all.find(pred);
+            for (const link of externals) {
+                const src = createdMap.get(link.from_local_id);
+                if (!src) continue;
+                const outIdx = Number.isFinite(link.out_index) ? link.out_index : (src.outputs||[]).findIndex(o => o?.name === link.out_name);
+                let target = null;
+                if (link.to_by_title) target = findBy(n => n?.title === link.to_by_title);
+                if (!target && link.to_by_type) target = findBy(n => n?.type === link.to_by_type);
+                if (!target) continue;
+                const inIdx = Number.isFinite(link.in_index) ? link.in_index : (target.inputs||[]).findIndex(i => i?.name === link.in_name);
+                if (outIdx>=0 && inIdx>=0) {
+                    try { src.connect(outIdx, target, inIdx); } catch(e) { console.warn('external connect failed', e); }
+                }
+            }
+        } catch (e) { console.warn('connectToExisting failed', e); }
+    }
+
+    _gatherOccupiedRects() {
+        try {
+            const app = window?.app;
+            const nodes = Array.isArray(app?.graph?._nodes) ? app.graph._nodes : [];
+            const rects = [];
+            for (const n of nodes) {
+                const pos = Array.isArray(n?.pos) ? n.pos : [0,0];
+                const size = Array.isArray(n?.size) ? n.size : [160, 80];
+                rects.push({ x: pos[0], y: pos[1], w: size[0], h: size[1] });
+            }
+            return rects;
+        } catch (_) { return []; }
+    }
+
+    _rectsOverlap(a, b) {
+        return !(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y);
+    }
+
+    _avoidCollision(desiredPos, size, occupiedRects) {
+        let x = Math.round(desiredPos[0]);
+        let y = Math.round(desiredPos[1]);
+        const w = Math.max(1, Math.round(size?.[0] || 160));
+        const h = Math.max(1, Math.round(size?.[1] || 80));
+        const step = 30;
+        let tries = 0;
+        while (tries < 400) {
+            const candidate = { x, y, w, h };
+            const hit = occupiedRects.some(r => this._rectsOverlap(candidate, r));
+            if (!hit) return [x, y];
+            x += step; y += step; // diagonal shift
+            tries++;
+            if (tries % 20 === 0) { x += 10; y -= 5; } // wiggle to escape tight clusters
+        }
+        return [x, y];
+    }
 }

@@ -91,12 +91,36 @@ export function modalTemplate(settings = {}) {
                     Blur thumbnails when an image's <code>nsfwLevel</code> is greater than or equal to this value.
                     Higher numbers indicate more explicit content. None (Safe/PG): 1, Mild (PG-13): 2, Mature (R): 4, Adult (X): 5, Extra Explicit (R): 8, Explicit (XXX): 16/32+
                   </p>
-                </div>
               </div>
             </div>
-            <button type="submit" id="civitai-settings-save" class="civitai-button primary" style="margin-top: 20px;">Save Settings</button>
-          </form>
-        </div>
+            <div class="civitai-settings-section">
+              <h4>ComfyUI Node Mapping</h4>
+              <p style="font-size:0.9em;color:#bbb;margin-top:0;">Assign which ComfyUI node to insert for a given Model Type or Base Model when using "Add to ComfyUI" from the Library.</p>
+              <div class="civitai-form-group">
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                  <button type="button" id="civitai-refresh-nodes" class="civitai-button small"><i class="fas fa-sync-alt"></i> Refresh Nodes</button>
+                  <span style="opacity:0.8;">Detected nodes are listed below. If empty, ensure ComfyUI UI is loaded.</span>
+                </div>
+              </div>
+              <div class="civitai-form-group">
+                <label>By Model Type</label>
+                <div style="display:flex;gap:8px;align-items:center;margin:6px 0;">
+                  <input type="text" id="civitai-node-search-type" class="civitai-input" placeholder="Search nodes...">
+                </div>
+                <div id="civitai-node-mapping-type" class="civitai-mapping-grid"></div>
+              </div>
+              <div class="civitai-form-group">
+                <label>By Base Model</label>
+                <div style="display:flex;gap:8px;align-items:center;margin:6px 0;">
+                  <input type="text" id="civitai-node-search-base" class="civitai-input" placeholder="Search nodes...">
+                </div>
+                <div id="civitai-node-mapping-base" class="civitai-mapping-grid"></div>
+              </div>
+            </div>
+          </div>
+          <button type="submit" id="civitai-settings-save" class="civitai-button primary" style="margin-top: 20px;">Save Settings</button>
+        </form>
+      </div>
       </div>
       <!-- Toast Notification Area -->
       <div id="civitai-toast" class="civitai-toast"></div>

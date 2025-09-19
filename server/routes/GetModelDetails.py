@@ -157,9 +157,47 @@ async def route_get_model_details(request):
                     "name": v.get("name") or f"Version {vid}",
                     "baseModel": v.get("baseModel") or v.get("base_model") or "",
                     "type": v.get("type") or v.get("model_type") or "",
+                    "publishedAt": v.get("publishedAt") or v.get("published_at"),
                 })
 
+        # Tags and trained words
+        tags = model_info.get('tags') if isinstance(model_info, dict) else []
+        if not isinstance(tags, list):
+            tags = []
+        trained_words = version_info.get('trainedWords') if isinstance(version_info, dict) else []
+        if not isinstance(trained_words, list):
+            trained_words = []
+
+        # Published/updated timestamps
+        published_at = version_info.get('publishedAt') or version_info.get('published_at') or model_info.get('publishedAt') or model_info.get('published_at')
+        updated_at = version_info.get('updatedAt') or version_info.get('updated_at') or model_info.get('updatedAt') or model_info.get('updated_at')
+
+        # Collect images (version-level if present)
+        images_payload = []
+        try:
+            if images and isinstance(images, list):
+                for img in images:
+                    if not isinstance(img, dict):
+                        continue
+                    url = img.get('url')
+                    if not url:
+                        continue
+                    meta = img.get('meta') or img.get('metadata') or {}
+                    images_payload.append({
+                        'url': url,
+                        'nsfwLevel': img.get('nsfwLevel'),
+                        'width': img.get('width'),
+                        'height': img.get('height'),
+                        'type': img.get('type'),
+                        'prompt': meta.get('prompt') if isinstance(meta, dict) else None,
+                        'negativePrompt': meta.get('negativePrompt') if isinstance(meta, dict) else None,
+                    })
+        except Exception:
+            images_payload = []
+
         # --- Return curated data ---
+        civitai_url = f"https://civitai.com/models/{target_model_id}{('?modelVersionId=' + str(target_version_id)) if target_version_id else ''}"
+
         return web.json_response({
             "success": True,
             "model_id": target_model_id,
@@ -168,6 +206,7 @@ async def route_get_model_details(request):
             "version_name": version_info.get('name', 'Unknown Version'),
             "creator_username": creator_username,
             "model_type": model_type,
+            "civitai_url": civitai_url,
             "description_html": description_html, # Send raw HTML (frontend should handle display safely)
             "version_description_html": version_description_html,
             "stats": {
@@ -176,6 +215,8 @@ async def route_get_model_details(request):
                 "dislikes": dislikes_count,
                 "buzz": buzz_count,
             },
+            "published_at": published_at,
+            "updated_at": updated_at,
             "file_info": {
                 "name": file_name,
                 "size_kb": file_size_kb,
@@ -189,6 +230,9 @@ async def route_get_model_details(request):
             # Optionally include basic version info like baseModel
             "base_model": version_info.get("baseModel", "N/A"),
             "model_versions": version_summaries,
+            "tags": tags,
+            "trained_words": trained_words,
+            "images": images_payload,
             # You could add tags here too if desired: model_info.get('tags', [])
         })
 
