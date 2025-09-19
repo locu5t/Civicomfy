@@ -7,6 +7,7 @@ Civicomfy seamlessly integrates Civitai's vast model repository directly into Co
 - **Integrated Model Search**: Search Civitai's extensive library directly from ComfyUI
 - **One-Click Downloads**: Download models with associated metadata and thumbnails
 - **Automatic Organization**: Models are automatically saved to their appropriate directories
+- **Tag & Trigger Management**: Curate custom tags and triggers on library cards with a keyboard-friendly drawer
 - **Clean UI**: Clean, intuitive interface that complements ComfyUI's aesthetic
 
 ## Installation
@@ -48,6 +49,7 @@ Workflows and attachments are persisted under the extension folder as JSON.
 Storage files:
 - `workflows.json`: { version, workflows: [ { workflow_id, name, node_list, connections, metadata } ] }
 - `card_meta.json`: { version, cards: { <download_id>: { workflow_ids:[], single_node_binding:{ node_type, widget } } } }
+  - Each card entry also persists `custom_tags` and `custom_triggers` arrays for user-added metadata.
 
 Minimal REST API:
 - `GET /civitai/workflows?card_id=<optional>` → { workflows:[{ workflow_id, name, node_count, connection_count, metadata }] }

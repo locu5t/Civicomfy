@@ -10,6 +10,44 @@ function escapeHtml(value = "") {
   })[match]);
 }
 
+function sanitizeList(values = []) {
+  if (!Array.isArray(values)) return [];
+  const cleaned = [];
+  const seen = new Set();
+  values.forEach((value) => {
+    if (value === null || value === undefined) return;
+    const text = String(value).trim();
+    if (!text) return;
+    const key = text.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    cleaned.push(text);
+  });
+  return cleaned;
+}
+
+function buildChipEntries(primary = [], custom = [], limit = Infinity) {
+  const entries = [];
+  const seen = new Set();
+  const pushList = (list, isCustom) => {
+    sanitizeList(list).forEach((value) => {
+      const key = value.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      entries.push({ value, isCustom });
+    });
+  };
+  pushList(custom, true);
+  pushList(primary, false);
+  return Number.isFinite(limit) ? entries.slice(0, limit) : entries;
+}
+
+function chipsToHtml(entries = [], title = "Copy value") {
+  return entries
+    .map(({ value, isCustom }) => `<span class="civitai-library-pill${isCustom ? ' civitai-library-pill-custom' : ''}" title="${escapeHtml(title)}">${escapeHtml(value)}</span>`)
+    .join("");
+}
+
 function formatDate(value) {
   if (!value) return "";
   const date = new Date(value);
@@ -58,18 +96,21 @@ export function renderLibraryList(ui, items = []) {
     const remoteThumb = item.thumbnail || '';
     const useSrc = localPreview || remoteThumb || PLACEHOLDER_IMAGE_URL;
 
-    const trainedHtml = trainedWords
-      .slice(0, 6)
-      .map((word) => `<span class="civitai-library-pill" title="Copy trigger">${escapeHtml(word)}</span>`)
-      .join("");
-
     const tagList = Array.isArray(item.tags)
       ? item.tags.map(t => typeof t === 'string' ? t : (t && typeof t.name === 'string' ? t.name : '')).filter(Boolean)
       : [];
-    const tagsHtml = tagList
-      .slice(0, 10)
-      .map((tag) => `<span class="civitai-library-pill" title="Copy tag">${escapeHtml(tag)}</span>`)
-      .join("");
+    const customTriggers = Array.isArray(item.custom_triggers) ? item.custom_triggers : [];
+    const customTags = Array.isArray(item.custom_tags) ? item.custom_tags : [];
+
+    const triggerEntries = buildChipEntries(trainedWords, customTriggers, 6);
+    const tagsEntries = buildChipEntries(tagList, customTags, 10);
+    const triggersHtml = triggerEntries.length
+      ? `<div class="civitai-library-tags" data-id="${escapeHtml(id)}">${chipsToHtml(triggerEntries, 'Copy trigger')}</div>`
+      : '';
+    const tagsHtml = tagsEntries.length
+      ? `<div class="civitai-library-tags" data-id="${escapeHtml(id)}">${chipsToHtml(tagsEntries, 'Copy tag')}</div>`
+      : '';
+    const hasCustomMeta = sanitizeList(customTriggers).length > 0 || sanitizeList(customTags).length > 0;
 
     container.innerHTML = `
       <div class="${thumbContainerClass}" data-nsfw-level="${Number.isFinite(nsfwLevel) ? nsfwLevel : ''}">
@@ -87,14 +128,15 @@ export function renderLibraryList(ui, items = []) {
         <div class="civitai-library-path" title="${escapeHtml(path)}">${escapeHtml(path)}</div>
         ${publishedAt ? `<div class="civitai-library-date">Published: ${escapeHtml(publishedAt)}</div>` : ''}
         ${downloadedAt ? `<div class="civitai-library-date">Downloaded: ${escapeHtml(downloadedAt)}</div>` : ''}
-        ${trainedHtml ? `<div class="civitai-library-tags" data-id="${escapeHtml(id)}">${trainedHtml}</div>` : ''}
-        ${tagsHtml ? `<div class="civitai-library-tags" data-id="${escapeHtml(id)}">${tagsHtml}</div>` : ''}
+        ${triggersHtml}
+        ${tagsHtml}
       </div>
       <div class="civitai-library-actions">
         <button class="civitai-button small civitai-library-details" data-model-id="${escapeHtml(String(item.model_id || ''))}" data-version-id="${escapeHtml(String(item.version_id || ''))}" title="View details"><i class="fas fa-search-plus"></i></button>
         <button class="civitai-button small civitai-library-open" data-id="${escapeHtml(id)}" ${exists ? '' : 'disabled'} title="Open containing folder"><i class="fas fa-folder-open"></i></button>
         <button class="civitai-button small civitai-library-add" data-id="${escapeHtml(id)}" ${exists ? '' : 'disabled'} title="Add to ComfyUI"><i class="fas fa-plus-circle"></i></button>
         <button class="civitai-button small civitai-library-workflow" data-id="${escapeHtml(id)}" ${exists ? '' : 'disabled'} title="Workflow"><i class="fas fa-project-diagram"></i></button>
+        <button class="civitai-button small civitai-library-edit-meta${hasCustomMeta ? ' has-custom' : ''}" data-id="${escapeHtml(id)}" title="Edit tags &amp; triggers" aria-label="Edit tags &amp; triggers"><i class="icon-tag" aria-hidden="true"></i></button>
         <button class="civitai-button danger small civitai-library-delete" data-id="${escapeHtml(id)}" title="Remove from disk"><i class="fas fa-trash-alt"></i></button>
       </div>
     `;

@@ -1110,6 +1110,12 @@
     border-color: rgba(92, 138, 255, 0.8);
 }
 
+.civitai-library-pill.civitai-library-pill-custom {
+    background-color: rgba(97, 202, 115, 0.22);
+    border-color: rgba(97, 202, 115, 0.6);
+    color: #ddf8e4;
+}
+
 .civitai-library-actions {
     display: flex;
     flex-direction: column;
@@ -1127,4 +1133,260 @@
     padding: 24px 12px;
     border: 1px dashed var(--border-color, #444);
     border-radius: 8px;
+}
+
+.civitai-library-edit-meta {
+    position: relative;
+}
+
+.civitai-library-edit-meta.has-custom::after {
+    content: "";
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #7fd27f;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Card metadata drawer */
+.civitai-card-meta-container {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: stretch;
+    justify-content: flex-end;
+    z-index: 5;
+}
+
+.civitai-card-meta-container.open {
+    display: flex;
+}
+
+.civitai-card-meta-backdrop {
+    flex: 1;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+.civitai-card-meta-drawer {
+    width: 420px;
+    max-width: 90%;
+    height: 100%;
+    background: var(--comfy-menu-bg);
+    color: var(--comfy-text-color);
+    border-left: 1px solid var(--border-color, #444);
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow-y: auto;
+}
+
+.civitai-card-meta-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.civitai-card-meta-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.civitai-card-meta-subtitle {
+    margin: 0;
+    font-size: 0.9em;
+    color: #b5b5b5;
+}
+
+.civitai-card-meta-close {
+    background: none;
+    border: none;
+    color: var(--comfy-text-color);
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+}
+
+.civitai-card-meta-close:hover {
+    color: #fff;
+}
+
+.civitai-card-meta-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.civitai-card-meta-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.civitai-chip-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.civitai-chip-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.civitai-chip-editor-title {
+    margin: 0;
+    font-size: 1.05em;
+}
+
+.civitai-chip-editor-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.civitai-chip-editor-field {
+    flex: 1;
+    padding: 8px 10px;
+    background: var(--comfy-input-bg);
+    color: var(--comfy-text-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+}
+
+.civitai-chip-editor-field:focus {
+    outline: none;
+    border-color: var(--accent-color, #5c8aff);
+    box-shadow: 0 0 0 2px rgba(92, 138, 255, 0.25);
+}
+
+.civitai-chip-editor-add,
+.civitai-chip-editor-add-all {
+    background: var(--comfy-input-bg);
+    border: 1px solid var(--border-color, #555);
+    color: var(--comfy-text-color);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 6px 12px;
+    font-size: 0.9em;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.civitai-chip-editor-add {
+    min-width: 38px;
+    padding: 6px 10px;
+}
+
+.civitai-chip-editor-add:hover,
+.civitai-chip-editor-add-all:hover {
+    background-color: var(--comfy-input-bg-hover, rgba(255,255,255,0.04));
+}
+
+.civitai-chip-editor-add:disabled,
+.civitai-chip-editor-add-all:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.civitai-chip-editor-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.civitai-chip-editor-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background-color: rgba(92, 138, 255, 0.15);
+    border: 1px solid rgba(92, 138, 255, 0.4);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 0.8em;
+}
+
+.civitai-chip-editor-chip-remove {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+}
+
+.civitai-chip-editor-chip-remove:hover {
+    color: #fff;
+}
+
+.civitai-chip-editor-helper {
+    margin: 0;
+    font-size: 0.85em;
+    color: #9ca3af;
+}
+
+.civitai-card-meta-preview {
+    border-top: 1px solid var(--border-color, #444);
+    padding-top: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.civitai-card-meta-preview h4 {
+    margin: 0;
+}
+
+.civitai-card-meta-preview-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.civitai-card-meta-preview-label {
+    font-size: 0.85em;
+    color: #b5b5b5;
+}
+
+.civitai-card-meta-preview-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.civitai-card-meta-preview-empty {
+    font-size: 0.85em;
+    color: #8f8f8f;
+}
+
+.civitai-card-meta-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    border-top: 1px solid var(--border-color, #444);
+    padding-top: 12px;
 }

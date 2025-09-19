@@ -8,6 +8,7 @@ import { showDetailsModal } from "./detailsModal.js";
 import { renderLibraryList } from "./libraryRenderer.js";
 import { modalTemplate } from "./templates.js";
 import { CivitaiDownloaderAPI } from "../api/civitai.js";
+import { createChipEditor } from "./chipEditor.js";
 
 export class CivitaiDownloaderUI {
     constructor() {
@@ -26,6 +27,9 @@ export class CivitaiDownloaderUI {
         this.libraryLoaded = false;
         this.libraryLoading = false;
         this.librarySearchTimeout = null;
+        this.cardMetaDrawer = null;
+        this.cardMetaKeyHandler = null;
+        this.cardMetaOpener = null;
 
         this.updateStatus();
         this.buildModalHTML();
@@ -200,6 +204,7 @@ export class CivitaiDownloaderUI {
     }
 
     closeModal() {
+        this.closeCardMetaDrawer({ restoreFocus: false });
         this.modal?.classList.remove('open');
         document.body.style.removeProperty('overflow');
         this.stopStatusUpdates();
@@ -232,6 +237,32 @@ export class CivitaiDownloaderUI {
         } catch (e) {
             return 'N/A';
         }
+    }
+
+    sanitizeStringList(values) {
+        if (!Array.isArray(values)) return [];
+        const cleaned = [];
+        const seen = new Set();
+        values.forEach((value) => {
+            if (value === null || value === undefined) return;
+            const text = String(value).trim();
+            if (!text) return;
+            const key = text.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            cleaned.push(text);
+        });
+        return cleaned;
+    }
+
+    listsEqualIgnoreCase(a, b) {
+        const left = this.sanitizeStringList(Array.isArray(a) ? a : []);
+        const right = this.sanitizeStringList(Array.isArray(b) ? b : []);
+        if (left.length !== right.length) return false;
+        for (let i = 0; i < left.length; i += 1) {
+            if (left[i].toLowerCase() !== right[i].toLowerCase()) return false;
+        }
+        return true;
     }
 
     showToast(message, type = 'info', duration = 3000) {
@@ -643,6 +674,8 @@ export class CivitaiDownloaderUI {
                 ];
                 if (Array.isArray(item?.trained_words)) fields.push(...item.trained_words);
                 if (Array.isArray(item?.tags)) fields.push(...item.tags);
+                if (Array.isArray(item?.custom_triggers)) fields.push(...item.custom_triggers);
+                if (Array.isArray(item?.custom_tags)) fields.push(...item.custom_tags);
                 return fields.some(field => typeof field === 'string' && field.toLowerCase().includes(query));
             });
         }
@@ -696,6 +729,356 @@ export class CivitaiDownloaderUI {
                 button.disabled = false;
                 button.innerHTML = originalIcon || '<i class="fas fa-trash-alt"></i>';
             }
+        }
+    }
+
+    ensureCardMetaDrawer() {
+        if (this.cardMetaDrawer) return this.cardMetaDrawer;
+        if (!this.modal) return null;
+
+        const container = document.createElement('div');
+        container.className = 'civitai-card-meta-container';
+        container.setAttribute('aria-hidden', 'true');
+
+        const backdrop = document.createElement('div');
+        backdrop.className = 'civitai-card-meta-backdrop';
+        const drawer = document.createElement('aside');
+        drawer.className = 'civitai-card-meta-drawer';
+        drawer.setAttribute('role', 'dialog');
+        drawer.setAttribute('aria-modal', 'true');
+        drawer.setAttribute('aria-labelledby', 'civitai-card-meta-title');
+        drawer.setAttribute('tabindex', '-1');
+
+        const header = document.createElement('div');
+        header.className = 'civitai-card-meta-header';
+        const titleWrap = document.createElement('div');
+        titleWrap.className = 'civitai-card-meta-title-wrap';
+        const title = document.createElement('h3');
+        title.id = 'civitai-card-meta-title';
+        title.textContent = 'Edit tags & triggers';
+        const subtitle = document.createElement('p');
+        subtitle.className = 'civitai-card-meta-subtitle';
+        titleWrap.appendChild(title);
+        titleWrap.appendChild(subtitle);
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'civitai-card-meta-close';
+        closeButton.setAttribute('aria-label', 'Close drawer');
+        closeButton.innerHTML = '&times;';
+        header.appendChild(titleWrap);
+        header.appendChild(closeButton);
+
+        const body = document.createElement('div');
+        body.className = 'civitai-card-meta-body';
+
+        const triggersSection = document.createElement('div');
+        triggersSection.className = 'civitai-card-meta-section';
+        const triggersEditor = createChipEditor(triggersSection, {
+            title: 'Triggers',
+            inputLabel: 'Add trigger',
+            placeholder: 'Enter trigger and press Enter',
+            addAllLabel: 'Add all triggers',
+            addButtonLabel: 'Add trigger',
+            helperText: 'Paste comma-separated triggers or press Enter to create a chip.',
+            sourceValues: [],
+            onChange: () => this.updateCardMetaDrawerState(),
+        });
+
+        const tagsSection = document.createElement('div');
+        tagsSection.className = 'civitai-card-meta-section';
+        const tagsEditor = createChipEditor(tagsSection, {
+            title: 'Tags',
+            inputLabel: 'Add tag',
+            placeholder: 'Enter tag and press Enter',
+            addAllLabel: 'Add all tags',
+            addButtonLabel: 'Add tag',
+            helperText: 'Paste comma-separated tags or press Enter to create a chip.',
+            sourceValues: [],
+            onChange: () => this.updateCardMetaDrawerState(),
+        });
+
+        const previewSection = document.createElement('div');
+        previewSection.className = 'civitai-card-meta-preview';
+        const previewTitle = document.createElement('h4');
+        previewTitle.textContent = 'Preview on card';
+        const previewTriggersWrap = document.createElement('div');
+        previewTriggersWrap.className = 'civitai-card-meta-preview-group';
+        const previewTriggersLabel = document.createElement('span');
+        previewTriggersLabel.className = 'civitai-card-meta-preview-label';
+        previewTriggersLabel.textContent = 'Custom triggers';
+        const previewTriggers = document.createElement('div');
+        previewTriggers.className = 'civitai-card-meta-preview-chips';
+        previewTriggersWrap.appendChild(previewTriggersLabel);
+        previewTriggersWrap.appendChild(previewTriggers);
+
+        const previewTagsWrap = document.createElement('div');
+        previewTagsWrap.className = 'civitai-card-meta-preview-group';
+        const previewTagsLabel = document.createElement('span');
+        previewTagsLabel.className = 'civitai-card-meta-preview-label';
+        previewTagsLabel.textContent = 'Custom tags';
+        const previewTags = document.createElement('div');
+        previewTags.className = 'civitai-card-meta-preview-chips';
+        previewTagsWrap.appendChild(previewTagsLabel);
+        previewTagsWrap.appendChild(previewTags);
+
+        previewSection.appendChild(previewTitle);
+        previewSection.appendChild(previewTriggersWrap);
+        previewSection.appendChild(previewTagsWrap);
+
+        body.appendChild(triggersSection);
+        body.appendChild(tagsSection);
+        body.appendChild(previewSection);
+
+        const footer = document.createElement('div');
+        footer.className = 'civitai-card-meta-footer';
+        const cancelButton = document.createElement('button');
+        cancelButton.type = 'button';
+        cancelButton.className = 'civitai-button';
+        cancelButton.textContent = 'Cancel';
+        const saveButton = document.createElement('button');
+        saveButton.type = 'button';
+        saveButton.className = 'civitai-button primary';
+        saveButton.textContent = 'Save';
+        saveButton.disabled = true;
+        saveButton.dataset.defaultText = 'Save';
+        footer.appendChild(cancelButton);
+        footer.appendChild(saveButton);
+
+        drawer.appendChild(header);
+        drawer.appendChild(body);
+        drawer.appendChild(footer);
+
+        container.appendChild(backdrop);
+        container.appendChild(drawer);
+        this.modal.appendChild(container);
+
+        backdrop.addEventListener('click', () => this.closeCardMetaDrawer());
+        closeButton.addEventListener('click', () => this.closeCardMetaDrawer());
+        cancelButton.addEventListener('click', () => this.closeCardMetaDrawer());
+        saveButton.addEventListener('click', () => this.saveCardMetaDrawer());
+
+        this.cardMetaDrawer = {
+            container,
+            backdrop,
+            drawer,
+            title,
+            subtitle,
+            closeButton,
+            saveButton,
+            cancelButton,
+            triggersEditor,
+            tagsEditor,
+            previewTriggers,
+            previewTags,
+            currentCardId: null,
+            initialValues: { triggers: [], tags: [] },
+            saving: false,
+        };
+        return this.cardMetaDrawer;
+    }
+
+    renderCardMetaPreview() {
+        const drawer = this.cardMetaDrawer;
+        if (!drawer) return;
+        const triggers = drawer.triggersEditor.getValues();
+        const tags = drawer.tagsEditor.getValues();
+
+        const renderGroup = (target, values) => {
+            target.innerHTML = '';
+            const list = this.sanitizeStringList(values);
+            if (list.length === 0) {
+                const empty = document.createElement('span');
+                empty.className = 'civitai-card-meta-preview-empty';
+                empty.textContent = 'None';
+                target.appendChild(empty);
+                return;
+            }
+            list.forEach((value) => {
+                const chip = document.createElement('span');
+                chip.className = 'civitai-library-pill civitai-library-pill-custom';
+                chip.textContent = value;
+                chip.title = 'Custom value';
+                target.appendChild(chip);
+            });
+        };
+
+        renderGroup(drawer.previewTriggers, triggers);
+        renderGroup(drawer.previewTags, tags);
+    }
+
+    updateCardMetaDrawerState() {
+        const drawer = this.cardMetaDrawer;
+        if (!drawer) return;
+        if (!drawer.saveButton.dataset.defaultText) {
+            drawer.saveButton.dataset.defaultText = drawer.saveButton.textContent || 'Save';
+        }
+        if (!drawer.saving) {
+            drawer.saveButton.textContent = drawer.saveButton.dataset.defaultText || 'Save';
+        }
+        this.renderCardMetaPreview();
+        const triggers = drawer.triggersEditor.getValues();
+        const tags = drawer.tagsEditor.getValues();
+        const changed = !this.listsEqualIgnoreCase(triggers, drawer.initialValues.triggers)
+            || !this.listsEqualIgnoreCase(tags, drawer.initialValues.tags);
+        drawer.saveButton.disabled = drawer.saving || !changed;
+    }
+
+    setupCardMetaFocusTrap() {
+        const drawer = this.cardMetaDrawer;
+        if (!drawer) return;
+        if (this.cardMetaKeyHandler) {
+            drawer.container.removeEventListener('keydown', this.cardMetaKeyHandler, true);
+        }
+        const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+        this.cardMetaKeyHandler = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                this.closeCardMetaDrawer();
+                return;
+            }
+            if (event.key !== 'Tab') return;
+            const focusable = Array.from(drawer.container.querySelectorAll(focusableSelector))
+                .filter((el) => !el.disabled && el.offsetParent !== null);
+            if (focusable.length === 0) {
+                event.preventDefault();
+                return;
+            }
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            if (event.shiftKey && document.activeElement === first) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && document.activeElement === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+        drawer.container.addEventListener('keydown', this.cardMetaKeyHandler, true);
+    }
+
+    removeCardMetaFocusTrap() {
+        const drawer = this.cardMetaDrawer;
+        if (drawer && this.cardMetaKeyHandler) {
+            drawer.container.removeEventListener('keydown', this.cardMetaKeyHandler, true);
+        }
+        this.cardMetaKeyHandler = null;
+    }
+
+    async openCardMetaDrawer(item, openerButton) {
+        if (!item || !item.id) {
+            this.showToast('Missing card information', 'error');
+            return;
+        }
+        const drawer = this.ensureCardMetaDrawer();
+        if (!drawer) return;
+
+        this.cardMetaOpener = openerButton || null;
+        drawer.currentCardId = item.id;
+        drawer.currentItem = item;
+        drawer.saving = false;
+        drawer.subtitle.textContent = item.model_name ? `Card: ${item.model_name}` : `Card ID: ${item.id}`;
+
+        const baseTriggers = this.sanitizeStringList(item.trained_words || []);
+        const baseTags = this.sanitizeStringList(item.tags || []);
+        drawer.triggersEditor.setSourceValues(baseTriggers);
+        drawer.tagsEditor.setSourceValues(baseTags);
+
+        let latestMeta = null;
+        try {
+            latestMeta = await CivitaiDownloaderAPI.getCardMeta(item.id);
+        } catch (error) {
+            console.warn('[Civicomfy] Failed to load card meta:', error);
+            this.showToast('Using cached metadata for this card', 'error', 4000);
+        }
+
+        const customTriggers = this.sanitizeStringList(latestMeta?.custom_triggers ?? item.custom_triggers ?? []);
+        const customTags = this.sanitizeStringList(latestMeta?.custom_tags ?? item.custom_tags ?? []);
+        drawer.initialValues = {
+            triggers: customTriggers.slice(),
+            tags: customTags.slice(),
+        };
+        drawer.triggersEditor.setValues(customTriggers, true);
+        drawer.tagsEditor.setValues(customTags, true);
+        this.updateCardMetaDrawerState();
+
+        drawer.container.classList.add('open');
+        drawer.container.setAttribute('aria-hidden', 'false');
+        this.setupCardMetaFocusTrap();
+        window.requestAnimationFrame(() => {
+            try { drawer.triggersEditor.focus(); } catch (_) { drawer.drawer.focus(); }
+        });
+    }
+
+    closeCardMetaDrawer(options = {}) {
+        const { restoreFocus = true } = options;
+        const drawer = this.cardMetaDrawer;
+        if (!drawer) return;
+        drawer.container.classList.remove('open');
+        drawer.container.setAttribute('aria-hidden', 'true');
+        drawer.saveButton.disabled = true;
+        drawer.saveButton.textContent = drawer.saveButton.dataset.defaultText || 'Save';
+        drawer.saving = false;
+        drawer.currentCardId = null;
+        drawer.currentItem = null;
+        drawer.initialValues = { triggers: [], tags: [] };
+        if (drawer.subtitle) drawer.subtitle.textContent = '';
+        this.removeCardMetaFocusTrap();
+        if (restoreFocus && this.cardMetaOpener && typeof this.cardMetaOpener.focus === 'function') {
+            try { this.cardMetaOpener.focus(); } catch (_) {}
+        }
+        this.cardMetaOpener = null;
+    }
+
+    updateLibraryCardMeta(cardId, customTags, customTriggers) {
+        if (!Array.isArray(this.libraryItems)) return;
+        const index = this.libraryItems.findIndex((entry) => entry && entry.id === cardId);
+        if (index === -1) return;
+        const item = this.libraryItems[index];
+        item.custom_tags = this.sanitizeStringList(customTags);
+        item.custom_triggers = this.sanitizeStringList(customTriggers);
+    }
+
+    async saveCardMetaDrawer() {
+        const drawer = this.cardMetaDrawer;
+        if (!drawer || !drawer.currentCardId || drawer.saving) return;
+        const triggers = this.sanitizeStringList(drawer.triggersEditor.getValues());
+        const tags = this.sanitizeStringList(drawer.tagsEditor.getValues());
+        const changed = !this.listsEqualIgnoreCase(triggers, drawer.initialValues.triggers)
+            || !this.listsEqualIgnoreCase(tags, drawer.initialValues.tags);
+        if (!changed) {
+            return;
+        }
+
+        drawer.saving = true;
+        drawer.saveButton.disabled = true;
+        drawer.saveButton.textContent = 'Saving…';
+
+        try {
+            const response = await CivitaiDownloaderAPI.updateCardMeta(drawer.currentCardId, {
+                custom_triggers: triggers,
+                custom_tags: tags,
+            });
+            if (response?.success === false) {
+                throw new Error(response?.error || 'Failed to save metadata');
+            }
+            const savedCard = response?.card || {};
+            const savedTriggers = this.sanitizeStringList(savedCard.custom_triggers ?? triggers);
+            const savedTags = this.sanitizeStringList(savedCard.custom_tags ?? tags);
+            drawer.initialValues = { triggers: savedTriggers.slice(), tags: savedTags.slice() };
+            this.updateLibraryCardMeta(drawer.currentCardId, savedTags, savedTriggers);
+            if (drawer.currentItem) {
+                drawer.currentItem.custom_tags = savedTags.slice();
+                drawer.currentItem.custom_triggers = savedTriggers.slice();
+            }
+            this.showToast('Tags & triggers updated', 'success');
+            this.applyLibraryFilter();
+            this.closeCardMetaDrawer();
+        } catch (error) {
+            console.error('[Civicomfy] Failed to save card meta:', error);
+            const message = error?.details || error?.message || 'Failed to save card metadata';
+            this.showToast(message, 'error', 5000);
+            drawer.saving = false;
+            this.updateCardMetaDrawerState();
         }
     }
 
