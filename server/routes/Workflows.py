@@ -40,11 +40,17 @@ from aiohttp import web
 
 import server  # ComfyUI server instance
 from ...config import PLUGIN_ROOT
+from ...utils.card_meta import (
+    ensure_card_entry as ensure_card_meta_entry,
+    ensure_card_meta_file,
+    load_card_meta,
+    save_card_meta,
+    sanitize_custom_list,
+)
 
 prompt_server = server.PromptServer.instance
 
 WORKFLOWS_PATH = os.path.join(PLUGIN_ROOT, "workflows.json")
-CARDS_META_PATH = os.path.join(PLUGIN_ROOT, "card_meta.json")
 
 
 def _now_iso() -> str:
@@ -76,8 +82,7 @@ def _save_json(path: str, data: Dict[str, Any]) -> None:
 def _ensure_files():
     if not os.path.exists(WORKFLOWS_PATH):
         _save_json(WORKFLOWS_PATH, {"version": 1, "workflows": []})
-    if not os.path.exists(CARDS_META_PATH):
-        _save_json(CARDS_META_PATH, {"version": 1, "cards": {}})
+    ensure_card_meta_file()
 
 
 def _list_workflows() -> List[Dict[str, Any]]:
@@ -91,17 +96,11 @@ def _write_workflows(workflows: List[Dict[str, Any]]) -> None:
 
 
 def _cards_meta() -> Dict[str, Any]:
-    data = _load_json(CARDS_META_PATH, {"version": 1, "cards": {}})
-    cards = data.get("cards")
-    if not isinstance(cards, dict):
-        cards = {}
-    return {"version": 1, "cards": cards}
+    return load_card_meta()
 
 
 def _write_cards_meta(cards_meta: Dict[str, Any]) -> None:
-    version = cards_meta.get("version", 1)
-    cards = cards_meta.get("cards", {})
-    _save_json(CARDS_META_PATH, {"version": version, "cards": cards})
+    save_card_meta(cards_meta)
 
 
 def _gen_wf_id(existing: List[Dict[str, Any]]) -> str:
@@ -213,9 +212,11 @@ async def route_delete_workflow(request):
     # Also detach from any cards
     meta = _cards_meta()
     changed = False
-    for card_id, info in list(meta["cards"].items()):
-        wids = [wid for wid in (info.get("workflow_ids") or []) if wid != workflow_id]
-        if len(wids) != len(info.get("workflow_ids") or []):
+    for card_id in list(meta.get("cards", {}).keys()):
+        info = ensure_card_meta_entry(meta, card_id)
+        existing = info.get("workflow_ids") or []
+        wids = [wid for wid in existing if wid != workflow_id]
+        if len(wids) != len(existing):
             info["workflow_ids"] = wids
             meta["cards"][card_id] = info
             changed = True
@@ -239,9 +240,11 @@ async def route_attach_workflow(request):
     if not any(w.get("workflow_id") == workflow_id for w in workflows):
         return web.json_response({"error": "Workflow not found"}, status=404)
     meta = _cards_meta()
-    info = meta["cards"].get(card_id) or {"workflow_ids": []}
-    if workflow_id not in info.get("workflow_ids", []):
-        info.setdefault("workflow_ids", []).append(workflow_id)
+    info = ensure_card_meta_entry(meta, card_id)
+    wids = info.get("workflow_ids") or []
+    if workflow_id not in wids:
+        wids.append(workflow_id)
+    info["workflow_ids"] = wids
     meta["cards"][card_id] = info
     _write_cards_meta(meta)
     return web.json_response({"success": True, "card": {"card_id": card_id, **info}})
@@ -259,7 +262,7 @@ async def route_detach_workflow(request):
     if not workflow_id:
         return web.json_response({"error": "Missing workflow_id"}, status=400)
     meta = _cards_meta()
-    info = meta["cards"].get(card_id) or {"workflow_ids": []}
+    info = ensure_card_meta_entry(meta, card_id)
     before = list(info.get("workflow_ids", []))
     info["workflow_ids"] = [wid for wid in before if wid != workflow_id]
     meta["cards"][card_id] = info
@@ -272,7 +275,7 @@ async def route_card_workflows(request):
     _ensure_files()
     card_id = request.match_info.get("card_id")
     meta = _cards_meta()
-    info = meta["cards"].get(card_id) or {"workflow_ids": []}
+    info = ensure_card_meta_entry(meta, card_id)
     wf_map = {w.get("workflow_id"): w for w in _list_workflows()}
     attached = [wf_map[wid] for wid in info.get("workflow_ids", []) if wid in wf_map]
     # Summary form
@@ -290,6 +293,8 @@ async def route_card_workflows(request):
         "card_id": card_id,
         "workflow_ids": info.get("workflow_ids", []),
         "single_node_binding": info.get("single_node_binding") or None,
+        "custom_tags": info.get("custom_tags", []),
+        "custom_triggers": info.get("custom_triggers", []),
         "workflows": items,
     }
     return web.json_response(result)
@@ -308,11 +313,56 @@ async def route_set_binding(request):
     if not node_type or not isinstance(node_type, str):
         return web.json_response({"error": "Missing node_type"}, status=400)
     meta = _cards_meta()
-    info = meta["cards"].get(card_id) or {"workflow_ids": []}
+    info = ensure_card_meta_entry(meta, card_id)
     info["single_node_binding"] = {"node_type": node_type, "widget": widget}
     meta["cards"][card_id] = info
     _write_cards_meta(meta)
     return web.json_response({"success": True, "card": {"card_id": card_id, **info}})
+
+
+@prompt_server.routes.get("/civitai/cards/{card_id}/meta")
+async def route_get_card_meta(request):
+    """Return stored metadata (workflows, bindings, custom tags/triggers) for a card."""
+    _ensure_files()
+    card_id = request.match_info.get("card_id")
+    meta = _cards_meta()
+    info = ensure_card_meta_entry(meta, card_id)
+    return web.json_response({"card_id": card_id, **info})
+
+
+@prompt_server.routes.post("/civitai/cards/{card_id}/meta")
+async def route_update_card_meta(request):
+    """Update user-defined tags and triggers for a card."""
+    _ensure_files()
+    card_id = request.match_info.get("card_id")
+    try:
+        body = await request.json()
+    except Exception as exc:
+        return web.json_response({"error": f"Invalid JSON: {exc}"}, status=400)
+
+    tags_raw = (body or {}).get("custom_tags", [])
+    triggers_raw = (body or {}).get("custom_triggers", [])
+    if not isinstance(tags_raw, list) or not isinstance(triggers_raw, list):
+        return web.json_response({"error": "custom_tags and custom_triggers must be arrays"}, status=400)
+
+    new_tags = sanitize_custom_list(tags_raw)
+    new_triggers = sanitize_custom_list(triggers_raw)
+
+    meta = _cards_meta()
+    info = ensure_card_meta_entry(meta, card_id)
+    changed = (
+        new_tags != info.get("custom_tags", [])
+        or new_triggers != info.get("custom_triggers", [])
+    )
+    info["custom_tags"] = new_tags
+    info["custom_triggers"] = new_triggers
+    meta["cards"][card_id] = info
+    _write_cards_meta(meta)
+    return web.json_response({
+        "success": True,
+        "card": {"card_id": card_id, **info},
+        "changed": changed,
+    })
 
 
 @prompt_server.routes.get("/civitai/workflows/export")

@@ -88,6 +88,20 @@ export function setupEventListeners(ui) {
                     console.error('Workflow popup failed:', e);
                     ui.showToast('Failed to open workflow options', 'error');
                 }
+            } else if (button.classList.contains('civitai-library-edit-meta')) {
+                const container = button.closest('.civitai-library-item');
+                const id = container?.dataset?.id || button.dataset.id;
+                const item = Array.isArray(ui.libraryItems) ? ui.libraryItems.find(x => x && x.id === id) : null;
+                if (!item) {
+                    ui.showToast('Could not locate library item', 'error');
+                    return;
+                }
+                try {
+                    await ui.openCardMetaDrawer(item, button);
+                } catch (e) {
+                    console.error('Open tags/triggers drawer failed:', e);
+                    ui.showToast('Failed to open tags & triggers editor', 'error');
+                }
             }
         });
     }

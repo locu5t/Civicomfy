@@ -235,6 +235,18 @@ export class CivitaiDownloaderAPI {
     });
   }
 
+  static async getCardMeta(cardId) {
+    return await this._request(`/civitai/cards/${encodeURIComponent(cardId)}/meta`);
+  }
+
+  static async updateCardMeta(cardId, payload) {
+    return await this._request(`/civitai/cards/${encodeURIComponent(cardId)}/meta`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
+  }
+
   static async exportWorkflows() {
     return await this._request(`/civitai/workflows/export`);
   }

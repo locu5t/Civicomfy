@@ -17,8 +17,9 @@ if TYPE_CHECKING:
 
 from ..config import (
     MAX_CONCURRENT_DOWNLOADS, DOWNLOAD_HISTORY_LIMIT, DEFAULT_CONNECTIONS,
-    METADATA_SUFFIX, PREVIEW_SUFFIX, METADATA_DOWNLOAD_TIMEOUT, PLUGIN_ROOT 
+    METADATA_SUFFIX, PREVIEW_SUFFIX, METADATA_DOWNLOAD_TIMEOUT, PLUGIN_ROOT
 )
+from ..utils.card_meta import load_card_meta
 try:
     from folder_paths import get_directory_by_type, get_valid_path, base_path
     COMFY_PATHS_AVAILABLE = True
@@ -1151,6 +1152,13 @@ class DownloadManager:
         with self.lock:
             snapshot = [dict(item) for item in self.history if isinstance(item, dict)]
 
+        try:
+            cards_meta = load_card_meta()
+            cards_meta_map = cards_meta.get("cards", {}) if isinstance(cards_meta, dict) else {}
+        except Exception as exc:
+            print(f"[Manager] Warning: failed to load card meta for library view: {exc}")
+            cards_meta_map = {}
+
         results: List[Dict[str, Any]] = []
         for entry in snapshot:
             status = entry.get("status")
@@ -1198,6 +1206,17 @@ class DownloadManager:
             if not isinstance(tags, list):
                 tags = []
 
+            card_meta = {}
+            card_id = entry.get("id")
+            if isinstance(cards_meta_map, dict) and isinstance(card_id, str):
+                card_meta = cards_meta_map.get(card_id) or {}
+            custom_tags = card_meta.get("custom_tags") if isinstance(card_meta, dict) else []
+            if not isinstance(custom_tags, list):
+                custom_tags = []
+            custom_triggers = card_meta.get("custom_triggers") if isinstance(card_meta, dict) else []
+            if not isinstance(custom_triggers, list):
+                custom_triggers = []
+
             # Published date prefers version's publishedAt, with model-level fallback
             published_at = None
             try:
@@ -1234,6 +1253,8 @@ class DownloadManager:
                 "deleted": bool(status == "deleted"),
                 "trained_words": trained_words,
                 "tags": tags,
+                "custom_triggers": custom_triggers,
+                "custom_tags": custom_tags,
             })
 
         return results
