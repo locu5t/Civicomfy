@@ -24,6 +24,17 @@ export function setupEventListeners(ui) {
         ui.libraryRefreshButton.addEventListener('click', () => ui.loadLibraryItems(true));
     }
 
+    if (ui.searchProviderSelect) {
+        ui.searchProviderSelect.addEventListener('change', () => {
+            if (typeof ui.updateProviderState === 'function') {
+                ui.updateProviderState();
+            }
+            if (ui.settings) {
+                ui.settings.defaultProvider = ui.getActiveProvider ? ui.getActiveProvider() : ui.searchProviderSelect.value;
+            }
+        });
+    }
+
     if (ui.libraryListContainer) {
         ui.libraryListContainer.addEventListener('click', async (event) => {
             const pill = event.target.closest('.civitai-library-pill');
@@ -108,7 +119,14 @@ export function setupEventListeners(ui) {
 
     ui.searchForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        if (!ui.searchQueryInput.value.trim() && ui.searchTypeSelect.value === 'any' && ui.searchBaseModelSelect.value === 'any') {
+        const provider = typeof ui.getActiveProvider === 'function' ? ui.getActiveProvider() : 'civitai';
+        const query = ui.searchQueryInput.value.trim();
+        const noTypeFilter = !ui.searchTypeSelect || ui.searchTypeSelect.value === 'any';
+        const noBaseFilter = !ui.searchBaseModelSelect || ui.searchBaseModelSelect.value === 'any';
+        const missingInput = provider === 'civitai'
+            ? (!query && noTypeFilter && noBaseFilter)
+            : (!query);
+        if (missingInput) {
             ui.showToast("Please enter a search query or select a filter.", "error");
             if (ui.searchResultsContainer) ui.searchResultsContainer.innerHTML = '<p>Please enter a search query or select a filter.</p>';
             if (ui.searchPaginationContainer) ui.searchPaginationContainer.innerHTML = '';

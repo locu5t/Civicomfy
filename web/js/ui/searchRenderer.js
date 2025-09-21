@@ -37,6 +37,8 @@ export function createCardElement(model) {
   card.dataset.modelName = model.title || '';
   card.dataset.versionId = model.versionId || '';
   card.dataset.versionName = model.versionName || '';
+  card.dataset.provider = (model.provider || 'civitai').toLowerCase();
+  if (model.thumbUrl) card.dataset.thumbnail = model.thumbUrl;
   card.__civitaiVersions = Array.isArray(model.versions) ? model.versions : [];
   if (model.raw) card.__civitaiRaw = model.raw;
 
@@ -197,23 +199,55 @@ export function populateDrawerWithDetails(cardEl, details, modelTypeOptions = []
       filesList.appendChild(empty);
     }
     files.forEach(file => {
-      const fileId = file.id ?? file.file_id;
-      if (!fileId && fileId !== 0) return;
-      const sizeKb = Number(file.size_kb ?? file.sizeKB ?? 0);
+      const fileId = file.id ?? file.file_id ?? file.path ?? file.name;
+      if (fileId === undefined || fileId === null) return;
+      const value = String(fileId);
       const disabled = file.downloadable === false;
-      const radio = document.createElement('div');
-      radio.className = 'civi-file-row';
-      radio.innerHTML = `
-        <label>
-          <input type="radio" name="file-${cardEl.dataset.modelId}-${cardEl.dataset.versionId || ''}" class="civi-file-radio" value="${fileId}" ${file.primary || file.isPrimary ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
-          ${escapeHtml(file.name || `File ${fileId}`)} (${formatBytes(sizeKb * 1024)}) ${disabled ? '<span class="civi-file-unavailable">(unavailable)</span>' : ''}
-        </label>
-      `;
-      filesList.appendChild(radio);
+      const filePath = (file.metadata && file.metadata.path) || file.huggingface?.path || file.file_path || file.path || file.name || value;
+      let sizeBytes = file.size_bytes ?? file.sizeBytes;
+      if (!Number.isFinite(sizeBytes)) {
+        const sizeKb = Number(file.size_kb ?? file.sizeKB);
+        if (Number.isFinite(sizeKb)) {
+          sizeBytes = sizeKb * 1024;
+        } else {
+          sizeBytes = undefined;
+        }
+      }
+      const displaySize = Number.isFinite(sizeBytes) ? formatBytes(sizeBytes) : 'Unknown size';
+
+      const row = document.createElement('div');
+      row.className = 'civi-file-row';
+      const label = document.createElement('label');
+      const input = document.createElement('input');
+      input.type = 'radio';
+      input.name = `file-${cardEl.dataset.modelId}-${cardEl.dataset.versionId || ''}`;
+      input.className = 'civi-file-radio';
+      input.value = value;
+      if (file.primary || file.isPrimary) input.checked = true;
+      if (disabled) input.disabled = true;
+      if (filePath) input.dataset.filePath = filePath;
+      if (file.downloadUrl) input.dataset.downloadUrl = file.downloadUrl;
+      if (Number.isFinite(sizeBytes)) input.dataset.sizeBytes = String(sizeBytes);
+      label.appendChild(input);
+      label.appendChild(document.createTextNode(' '));
+
+      const textSpan = document.createElement('span');
+      textSpan.textContent = `${file.name || `File ${value}`} (${displaySize})`;
+      label.appendChild(textSpan);
+
+      if (disabled) {
+        const unavailable = document.createElement('span');
+        unavailable.className = 'civi-file-unavailable';
+        unavailable.textContent = ' (unavailable)';
+        label.appendChild(unavailable);
+      }
+
+      row.appendChild(label);
+      filesList.appendChild(row);
     });
-    if (!filesList.querySelector('.civi-file-radio:checked')) {
-      const firstRadio = filesList.querySelector('.civi-file-radio');
-      if (firstRadio && !firstRadio.disabled) firstRadio.checked = true;
+    const firstAvailable = filesList.querySelector('.civi-file-radio:not([disabled])');
+    if (firstAvailable && !filesList.querySelector('.civi-file-radio:checked')) {
+      firstAvailable.checked = true;
     }
   }
 

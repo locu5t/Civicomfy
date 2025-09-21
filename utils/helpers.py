@@ -14,6 +14,7 @@ import folder_paths
 from ..config import MODEL_TYPE_DIRS
 
 _CIVITAI_HOSTS = {"civitai.com", "www.civitai.com"}
+_HUGGINGFACE_HOSTS = {"huggingface.co", "www.huggingface.co"}
 _MAX_FILENAME_LEN = 200
 _RESERVED_NAMES = {
     "CON",
@@ -129,6 +130,59 @@ def parse_civitai_input(url_or_id: str) -> tuple[Optional[int], Optional[int]]:
     version_id = _first_int(query.get("modelVersionId")) or _extract_path_id(parts, "model-versions")
 
     return model_id, version_id
+
+
+def parse_huggingface_input(value: str) -> tuple[Optional[str], Optional[str]]:
+    """Parse a Hugging Face repo string or URL into (repo_id, revision)."""
+
+    text = (value or "").strip()
+    if not text:
+        return None, None
+
+    # Direct repo id like "owner/model"
+    if "//" not in text and text.count("/") >= 1:
+        cleaned = text.strip("/")
+        if cleaned:
+            return cleaned, None
+        return None, None
+
+    candidate = text
+    if "//" not in candidate:
+        candidate = f"https://huggingface.co/{candidate.lstrip('/')}"
+
+    try:
+        parsed = urlparse(candidate)
+    except Exception:
+        return None, None
+
+    host = parsed.netloc.split(":")[0].lower()
+    if host not in _HUGGINGFACE_HOSTS:
+        return None, None
+
+    parts = [p for p in parsed.path.split("/") if p]
+    if len(parts) < 2:
+        return None, None
+
+    # Handle URLs like /models/owner/model
+    if parts[0] in {"models", "model"} and len(parts) >= 3:
+        repo_parts = parts[1:3]
+        remainder = parts[3:]
+    else:
+        repo_parts = parts[:2]
+        remainder = parts[2:]
+
+    repo_id = "/".join(repo_parts).strip("/")
+    revision: Optional[str] = None
+
+    if remainder and remainder[0].lower() == "resolve" and len(remainder) >= 2:
+        revision = remainder[1]
+    else:
+        query = parse_qs(parsed.query)
+        revision = (query.get("revision") or query.get("ref") or query.get("commit"))
+        if isinstance(revision, list):
+            revision = revision[0] if revision else None
+
+    return (repo_id or None), (revision or None)
 
 
 def sanitize_filename(filename: str, default_filename: str = "downloaded_model") -> str:

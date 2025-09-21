@@ -32,6 +32,7 @@ export class CivitaiDownloaderUI {
         this.cardMetaDrawer = null;
         this.cardMetaKeyHandler = null;
         this.cardMetaOpener = null;
+        this.activeProvider = 'civitai';
 
         this.updateStatus();
         this.buildModalHTML();
@@ -65,6 +66,7 @@ export class CivitaiDownloaderUI {
         // Search Tab
         this.searchForm = this.modal.querySelector('#civitai-search-form');
         this.searchQueryInput = this.modal.querySelector('#civitai-search-query');
+        this.searchProviderSelect = this.modal.querySelector('#civitai-search-provider');
         this.searchTypeSelect = this.modal.querySelector('#civitai-search-type');
         this.searchBaseModelSelect = this.modal.querySelector('#civitai-search-base-model');
         this.searchSortSelect = this.modal.querySelector('#civitai-search-sort');
@@ -77,6 +79,7 @@ export class CivitaiDownloaderUI {
         // Settings Tab
         this.settingsForm = this.modal.querySelector('#civitai-settings-form');
         this.settingsApiKeyInput = this.modal.querySelector('#civitai-settings-api-key');
+        this.settingsHfTokenInput = this.modal.querySelector('#civitai-settings-hf-token');
         this.settingsConnectionsInput = this.modal.querySelector('#civitai-settings-connections');
         this.settingsDefaultTypeSelect = this.modal.querySelector('#civitai-settings-default-type');
         this.settingsHideMatureCheckbox = this.modal.querySelector('#civitai-settings-hide-mature');
@@ -111,6 +114,7 @@ export class CivitaiDownloaderUI {
         await this.populateModelTypes();
         await this.populateBaseModels();
         this.loadAndApplySettings();
+        this.updateProviderState();
         // Build mapping UI now that types and base models are known
         this.populateNodeMappingUI();
         if (this.nodeSearchTypeInput) this.nodeSearchTypeInput.addEventListener('input', () => this.populateNodeMappingUI());
@@ -808,6 +812,11 @@ export class CivitaiDownloaderUI {
 
     async openLibraryDetails(item) {
         if (!item) return;
+        const provider = (item.provider || '').toString().toLowerCase();
+        if (provider === 'huggingface') {
+            this.showToast('Detailed metadata is not yet available for Hugging Face downloads.', 'info');
+            return;
+        }
         // Prefer local offline details when available
         if (item.metadata_path) {
             try {
@@ -1535,6 +1544,7 @@ export class CivitaiDownloaderUI {
         if (!hit || typeof hit !== 'object') return null;
         const modelId = hit.id || hit.modelId;
         if (!modelId) return null;
+        const provider = (hit.provider || hit.raw?.provider || 'civitai').toLowerCase();
         const versions = Array.isArray(hit.versions)
             ? hit.versions
             : (Array.isArray(hit.modelVersions) ? hit.modelVersions : []);
@@ -1547,6 +1557,7 @@ export class CivitaiDownloaderUI {
             id: v?.id,
             name: v?.name,
             baseModel: v?.baseModel,
+            revision: v?.revision,
         })).filter(v => v.id);
 
         return {
@@ -1561,8 +1572,37 @@ export class CivitaiDownloaderUI {
             baseModel: primary.baseModel || fallbackBase || '',
             modelType: hit.type || primary.type || '',
             versions: mappedVersions,
+            provider,
             raw: hit,
         };
+    }
+
+    getActiveProvider() {
+        if (this.searchProviderSelect) {
+            return this.searchProviderSelect.value || 'civitai';
+        }
+        return 'civitai';
+    }
+
+    setActiveProvider(provider) {
+        if (this.searchProviderSelect) {
+            this.searchProviderSelect.value = provider;
+        }
+        this.updateProviderState();
+    }
+
+    updateProviderState() {
+        const provider = this.getActiveProvider();
+        this.activeProvider = provider;
+        const disableTypeFilters = provider !== 'civitai';
+        if (this.searchTypeSelect) {
+            this.searchTypeSelect.disabled = disableTypeFilters;
+            this.searchTypeSelect.classList.toggle('disabled', disableTypeFilters);
+        }
+        if (this.searchBaseModelSelect) {
+            this.searchBaseModelSelect.disabled = disableTypeFilters;
+            this.searchBaseModelSelect.classList.toggle('disabled', disableTypeFilters);
+        }
     }
 
     renderSearchPagination(metadata) {

@@ -5,9 +5,11 @@ const SETTINGS_COOKIE_NAME = 'civitaiDownloaderSettings';
 export function getDefaultSettings() {
     return {
         apiKey: '',
+        hfToken: '',
         numConnections: 1,
         defaultModelType: 'checkpoint',
         searchResultLimit: 20,
+        defaultProvider: 'civitai',
         hideMatureInSearch: true,
         nsfwBlurMinLevel: 4, // Blur thumbnails with nsfwLevel >= this value
         mergedSearchDownloadUI: false,
@@ -51,6 +53,9 @@ export function applySettings(ui) {
     if (ui.settingsApiKeyInput) {
         ui.settingsApiKeyInput.value = ui.settings.apiKey || '';
     }
+    if (ui.settingsHfTokenInput) {
+        ui.settingsHfTokenInput.value = ui.settings.hfToken || '';
+    }
     if (ui.settingsConnectionsInput) {
         ui.settingsConnectionsInput.value = Math.max(1, Math.min(16, ui.settings.numConnections || 1));
     }
@@ -68,6 +73,12 @@ export function applySettings(ui) {
         ui.settingsNsfwThresholdInput.value = Number.isFinite(val) ? val : 4;
     }
     ui.searchPagination.limit = ui.settings.searchResultLimit || 20;
+    if (ui.searchProviderSelect) {
+        ui.searchProviderSelect.value = ui.settings.defaultProvider || 'civitai';
+    }
+    if (typeof ui.updateProviderState === 'function') {
+        ui.updateProviderState();
+    }
 
     if (typeof ui.updateMergedUIState === 'function') {
         ui.updateMergedUIState();
@@ -76,6 +87,7 @@ export function applySettings(ui) {
 
 export function handleSettingsSave(ui) {
     const apiKey = ui.settingsApiKeyInput.value.trim();
+    const hfToken = ui.settingsHfTokenInput?.value?.trim() || '';
     const numConnections = parseInt(ui.settingsConnectionsInput.value, 10);
     const defaultModelType = ui.settingsDefaultTypeSelect.value;
     const hideMatureInSearch = ui.settingsHideMatureCheckbox.checked;
@@ -92,11 +104,13 @@ export function handleSettingsSave(ui) {
     }
 
     ui.settings.apiKey = apiKey;
+    ui.settings.hfToken = hfToken;
     ui.settings.numConnections = numConnections;
     ui.settings.defaultModelType = defaultModelType;
     ui.settings.hideMatureInSearch = hideMatureInSearch;
     ui.settings.nsfwBlurMinLevel = (Number.isFinite(nsfwBlurMinLevel) && nsfwBlurMinLevel >= 0) ? Math.min(128, Math.round(nsfwBlurMinLevel)) : 4;
     ui.settings.mergedSearchDownloadUI = mergedSearchDownloadUI;
+    ui.settings.defaultProvider = typeof ui.getActiveProvider === 'function' ? ui.getActiveProvider() : 'civitai';
 
     // Read node mappings if present in UI
     try {
