@@ -406,6 +406,7 @@ async def route_download_model(request):
             "num_connections": num_connections,
             "known_size": known_size_bytes,
             "api_key": api_key or None, # Pass API key for download auth if needed
+            "provider": "civitai",
             # Retry/context fields
             "model_url_or_id": model_url_or_id,
             "model_version_id": req_version_id,
@@ -430,6 +431,9 @@ async def route_download_model(request):
             "civitai_model_info": model_info,
             "civitai_version_info": version_info,
             "civitai_primary_file": primary_file, # Pass the selected file object
+            "huggingface_repo_id": None,
+            "huggingface_revision": None,
+            "huggingface_path": None,
         }
 
         download_id = download_manager.add_to_queue(download_info)

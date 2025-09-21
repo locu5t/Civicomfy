@@ -8,6 +8,7 @@ const RESERVED_SEGMENTS = new Set([
 ]);
 
 const CIVITAI_HOSTS = new Set(['civitai.com', 'www.civitai.com']);
+const HUGGINGFACE_HOSTS = new Set(['huggingface.co', 'www.huggingface.co']);
 
 function escapeRegex(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -245,8 +246,113 @@ function parseModelLookup(value) {
   return { modelId, versionId };
 }
 
+function parseHuggingFaceLookup(value) {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return null;
+
+  const direct = trimmed.replace(/^https?:\/\//i, '').replace(/^huggingface\.co\//i, '');
+  if (!trimmed.includes('://') && direct.includes('/')) {
+    const cleaned = direct.replace(/^\/+/, '').replace(/\.git$/i, '');
+    const [owner, repo, maybeRevision] = cleaned.split('/');
+    if (owner && repo) {
+      const revision = maybeRevision && maybeRevision !== repo ? maybeRevision : null;
+      return { repoId: `${owner}/${repo}`, revision: revision || null };
+    }
+  }
+
+  let candidate = trimmed;
+  if (!candidate.includes('://')) {
+    candidate = `https://huggingface.co/${candidate.replace(/^\/+/, '')}`;
+  }
+
+  let parsed;
+  try {
+    parsed = new URL(candidate);
+  } catch (err) {
+    return null;
+  }
+
+  const host = parsed.hostname.replace(/^www\./i, '').toLowerCase();
+  if (!HUGGINGFACE_HOSTS.has(host)) return null;
+
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length < 2) return null;
+
+  let repoSegments = segments.slice(0, 2);
+  let remainder = segments.slice(2);
+  if (segments[0].toLowerCase() === 'models' && segments.length >= 3) {
+    repoSegments = segments.slice(1, 3);
+    remainder = segments.slice(3);
+  }
+
+  if (repoSegments.length < 2) return null;
+  const repoId = `${repoSegments[0]}/${repoSegments[1]}`;
+  let revision = parsed.searchParams.get('revision') || parsed.searchParams.get('branch') || parsed.searchParams.get('ref');
+  if (!revision && remainder[0]?.toLowerCase() === 'resolve' && remainder[1]) {
+    revision = remainder[1];
+  }
+
+  return { repoId, revision: revision || null };
+}
+
 function buildSearchHitFromDetails(details) {
   if (!details || details.success === false) return null;
+
+  const provider = (details.provider || '').toString().toLowerCase() || 'civitai';
+
+  if (provider === 'huggingface') {
+    const repoId = details.model_id || details.repo_id || details.huggingface?.repo_id;
+    if (!repoId) return null;
+
+    const versionId = details.version_id || details.versionId || details.huggingface?.revision || 'main';
+    const versionsFromDetails = Array.isArray(details.model_versions)
+      ? details.model_versions
+      : [];
+    let selectedVersion = versionsFromDetails.find((version) => {
+      const vid = version?.id ?? version?.versionId ?? version?.revision;
+      return vid && String(vid) === String(versionId);
+    });
+    if (!selectedVersion) {
+      selectedVersion = {
+        id: versionId,
+        name: versionId,
+        baseModel: details.base_model || '',
+        type: details.model_type || '',
+        revision: versionId,
+      };
+    }
+    const versions = versionsFromDetails.length > 0 ? versionsFromDetails : [selectedVersion];
+
+    const stats = details.stats || {};
+    const metrics = {
+      downloadCount: stats.downloads ?? stats.downloadCount ?? details.downloads,
+      thumbsUpCount: stats.likes ?? stats.thumbsUpCount ?? details.likes,
+    };
+
+    const hit = {
+      id: repoId,
+      modelId: repoId,
+      name: details.model_name || details.version_name || repoId,
+      type: details.model_type || selectedVersion.type || '',
+      metrics,
+      stats: metrics,
+      versions,
+      version: selectedVersion,
+      baseModel: details.base_model || selectedVersion.baseModel || '',
+      thumbnailUrl: details.thumbnail_url || details.thumbnail || null,
+      downloads: metrics.downloadCount,
+      likes: metrics.thumbsUpCount,
+      provider: 'huggingface',
+      tags: Array.isArray(details.tags) ? details.tags : [],
+      raw: { directDetails: true, provider: 'huggingface', data: details },
+    };
+
+    if (details.creator_username) {
+      hit.user = { username: details.creator_username };
+    }
+
+    return hit;
+  }
 
   const modelId = toInt(details.model_id) ?? details.model_id ?? null;
   const versionId = toInt(details.version_id);
@@ -318,6 +424,7 @@ function buildSearchHitFromDetails(details) {
     modelVersions: versions,
     version: versionForHit,
     baseModel: inferredBaseModel,
+    provider: 'civitai',
     raw: { directDetails: true, data: details },
   };
 
@@ -336,52 +443,96 @@ export async function handleSearchSubmit(ui) {
   ui.ensureFontAwesome();
 
   const query = ui.searchQueryInput.value.trim();
-  const directLookup = parseModelLookup(query);
+  const provider = typeof ui.getActiveProvider === 'function' ? ui.getActiveProvider() : 'civitai';
 
   try {
-    if (directLookup) {
+    if (provider === 'civitai') {
+      const directLookup = parseModelLookup(query);
+      if (directLookup) {
+        try {
+          const payload = {
+            model_url_or_id: query,
+            model_version_id: directLookup.versionId ?? null,
+            api_key: ui.settings.apiKey,
+          };
+          const details = await CivitaiDownloaderAPI.getModelDetails(payload);
+          const directHit = buildSearchHitFromDetails(details);
+          if (!directHit) {
+            const err = new Error('Model details response was missing required data.');
+            err.details = 'Model details response was missing required data.';
+            throw err;
+          }
+          ui.renderSearchResults([directHit]);
+          ui.renderSearchPagination({ totalItems: 1, totalPages: 1, currentPage: 1, pageSize: 1 });
+          return;
+        } catch (directError) {
+          console.warn('Direct model lookup failed, falling back to full search.', directError);
+          if (directError?.status === 404) {
+            ui.showToast(directError.details || 'Model not found. Showing regular search results instead.', 'info', 4500);
+          }
+        }
+      }
+
+      const params = {
+        query,
+        model_types: ui.searchTypeSelect.value === 'any' ? [] : [ui.searchTypeSelect.value],
+        base_models: ui.searchBaseModelSelect.value === 'any' ? [] : [ui.searchBaseModelSelect.value],
+        sort: ui.searchSortSelect.value,
+        limit: ui.searchPagination.limit,
+        page: ui.searchPagination.currentPage,
+        api_key: ui.settings.apiKey,
+      };
+
+      const response = await CivitaiDownloaderAPI.searchModels(params);
+      if (!response || !response.metadata || !Array.isArray(response.items)) {
+        console.error('Invalid search response structure:', response);
+        throw new Error('Received invalid data from search API.');
+      }
+
+      ui.renderSearchResults(response.items);
+      ui.renderSearchPagination(response.metadata);
+      return;
+    }
+
+    const hfLookup = parseHuggingFaceLookup(query);
+    if (hfLookup && hfLookup.repoId) {
       try {
         const payload = {
           model_url_or_id: query,
-          model_version_id: directLookup.versionId ?? null,
-          api_key: ui.settings.apiKey,
+          repo_id: hfLookup.repoId,
+          revision: hfLookup.revision ?? null,
+          token: ui.settings.hfToken,
+          hf_token: ui.settings.hfToken,
         };
-        const details = await CivitaiDownloaderAPI.getModelDetails(payload);
-        const directHit = buildSearchHitFromDetails(details);
-        if (!directHit) {
-          const err = new Error('Model details response was missing required data.');
-          err.details = 'Model details response was missing required data.';
-          throw err;
+        const details = await CivitaiDownloaderAPI.getHuggingFaceDetails(payload);
+        const hit = buildSearchHitFromDetails(details);
+        if (hit) {
+          ui.renderSearchResults([hit]);
+          ui.renderSearchPagination({ totalItems: 1, totalPages: 1, currentPage: 1, pageSize: 1 });
+          return;
         }
-        ui.renderSearchResults([directHit]);
-        ui.renderSearchPagination({ totalItems: 1, totalPages: 1, currentPage: 1, pageSize: 1 });
-        return;
       } catch (directError) {
-        console.warn('Direct model lookup failed, falling back to full search.', directError);
-        if (directError?.status === 404) {
-          ui.showToast(directError.details || 'Model not found. Showing regular search results instead.', 'info', 4500);
-        }
+        console.warn('Direct Hugging Face lookup failed, proceeding with search.', directError);
       }
     }
 
     const params = {
       query,
-      model_types: ui.searchTypeSelect.value === 'any' ? [] : [ui.searchTypeSelect.value],
-      base_models: ui.searchBaseModelSelect.value === 'any' ? [] : [ui.searchBaseModelSelect.value],
       sort: ui.searchSortSelect.value,
       limit: ui.searchPagination.limit,
       page: ui.searchPagination.currentPage,
-      api_key: ui.settings.apiKey,
+      token: ui.settings.hfToken,
+      hf_token: ui.settings.hfToken,
     };
 
-    const response = await CivitaiDownloaderAPI.searchModels(params);
-    if (!response || !response.metadata || !Array.isArray(response.items)) {
-      console.error('Invalid search response structure:', response);
-      throw new Error('Received invalid data from search API.');
+    const response = await CivitaiDownloaderAPI.searchHuggingFaceModels(params);
+    if (!response || !Array.isArray(response.items)) {
+      console.error('Invalid Hugging Face search response structure:', response);
+      throw new Error('Received invalid data from Hugging Face search API.');
     }
 
     ui.renderSearchResults(response.items);
-    ui.renderSearchPagination(response.metadata);
+    ui.renderSearchPagination(response.metadata || { totalItems: response.items.length, totalPages: 1, currentPage: 1, pageSize: ui.searchPagination.limit });
   } catch (error) {
     const message = `Search failed: ${error.details || error.message || 'Unknown error'}`;
     console.error('Search Submit Error:', error);
@@ -469,12 +620,25 @@ async function handleQuickDownload(card, ctx) {
     const versionSelect = card.querySelector('.civi-version-select');
     const versionId = versionSelect ? versionSelect.value : card.dataset.versionId;
     const settings = ctx.getSettings();
-    const payload = {
-      model_url_or_id: modelId,
-      model_version_id: versionId ? Number(versionId) : null,
-      api_key: settings?.apiKey || '',
-    };
-    const details = await ctx.api.getModelDetails(payload);
+    const provider = (card.dataset.provider || 'civitai').toLowerCase();
+    let details;
+    if (provider === 'huggingface') {
+      const payload = {
+        model_url_or_id: modelId,
+        repo_id: modelId,
+        revision: versionId || card.dataset.versionId || 'main',
+        token: settings?.hfToken || '',
+        hf_token: settings?.hfToken || '',
+      };
+      details = await ctx.api.getHuggingFaceDetails(payload);
+    } else {
+      const payload = {
+        model_url_or_id: modelId,
+        model_version_id: versionId ? Number(versionId) : null,
+        api_key: settings?.apiKey || '',
+      };
+      details = await ctx.api.getModelDetails(payload);
+    }
     if (!details || details.success === false) {
       const message = details?.details || details?.error || 'Failed to load model details';
       ctx.toast(message, 'error');
@@ -491,6 +655,9 @@ async function handleQuickDownload(card, ctx) {
     if (details.model_name) card.dataset.modelName = details.model_name;
     if (details.version_name) card.dataset.versionName = details.version_name;
     if (details.version_id) card.dataset.versionId = details.version_id;
+    if (provider === 'huggingface' && details?.huggingface?.revision) {
+      card.dataset.versionId = details.huggingface.revision;
+    }
     const selectedModelType = inferred || settings?.defaultModelType || card.dataset.modelType || '';
     const folderStructure = buildAutoFolderStructure(card, details, selectedModelType, resolvedBaseModel);
     const resolvedModelType = selectedModelType || folderStructure.typeSegment || '';
@@ -505,6 +672,15 @@ async function handleQuickDownload(card, ctx) {
     populateDrawerWithDetails(card, details, modelTypeOptions, defaults);
     if (Array.isArray(details?.model_versions) && details.model_versions.length > 0) {
       card.__civitaiVersions = details.model_versions;
+    }
+    if (provider === 'huggingface') {
+      card.dataset.provider = 'huggingface';
+      card.__civitaiVersions = Array.isArray(details?.model_versions) && details.model_versions.length > 0
+        ? details.model_versions
+        : [{ id: details.version_id || 'main', name: details.version_name || 'main', revision: details.version_id || 'main' }];
+    }
+    if (details.thumbnail_url) {
+      card.dataset.thumbnail = details.thumbnail_url;
     }
     ensurePathPreviewListeners(card);
     updatePathPreview(card);
@@ -539,12 +715,25 @@ async function handleDetails(card, ctx) {
     const versionSelect = card.querySelector('.civi-version-select');
     const versionId = versionSelect ? versionSelect.value : card.dataset.versionId;
     const settings = ctx.getSettings();
-    const payload = {
-      model_url_or_id: modelId,
-      model_version_id: versionId ? Number(versionId) : null,
-      api_key: settings?.apiKey || '',
-    };
-    const details = await ctx.api.getModelDetails(payload);
+    const provider = (card.dataset.provider || 'civitai').toLowerCase();
+    let details;
+    if (provider === 'huggingface') {
+      const payload = {
+        model_url_or_id: modelId,
+        repo_id: modelId,
+        revision: versionId || card.dataset.versionId || 'main',
+        token: settings?.hfToken || '',
+        hf_token: settings?.hfToken || '',
+      };
+      details = await ctx.api.getHuggingFaceDetails(payload);
+    } else {
+      const payload = {
+        model_url_or_id: modelId,
+        model_version_id: versionId ? Number(versionId) : null,
+        api_key: settings?.apiKey || '',
+      };
+      details = await ctx.api.getModelDetails(payload);
+    }
     if (!details || details.success === false) {
       const message = details?.details || details?.error || 'Failed to load details';
       ctx.toast(message, 'error');
@@ -565,7 +754,8 @@ async function handleDetails(card, ctx) {
 async function handleQueue(card, ctx) {
   try {
     const settings = ctx.getSettings();
-    if (!settings?.apiKey) {
+    const provider = (card.dataset.provider || 'civitai').toLowerCase();
+    if (provider === 'civitai' && !settings?.apiKey) {
       ctx.toast('API key required. Set it in Settings.', 'error');
       if (typeof ctx.options.onRequireApiKey === 'function') {
         ctx.options.onRequireApiKey();
@@ -612,17 +802,55 @@ function buildPayloadFromDrawer(card, settings) {
   const modelId = card.dataset.modelId;
   if (!modelId) return null;
   const versionSelect = card.querySelector('.civi-version-select');
-  const versionId = versionSelect && versionSelect.value ? Number(versionSelect.value) : undefined;
+  const versionValue = versionSelect && versionSelect.value ? versionSelect.value : undefined;
   const fileRadio = card.querySelector('.civi-file-radio:checked');
-  const fileId = fileRadio ? Number(fileRadio.value) : undefined;
+  const fileValue = fileRadio ? fileRadio.value : undefined;
   const modelType = card.querySelector('.civi-target-root')?.value || card.dataset.modelType || settings?.defaultModelType || '';
   const folders = collectFolderSegments(card);
   const subdirParts = [folders.baseSegment, folders.modelSegment, folders.versionSegment].filter(Boolean);
   const subdir = subdirParts.join('/');
   const filename = card.querySelector('.civi-filename-input')?.value?.trim() || '';
   const force = !!card.querySelector('.civi-force-checkbox')?.checked;
+  const provider = (card.dataset.provider || 'civitai').toLowerCase();
+
+  if (provider === 'huggingface') {
+    if (!fileValue) return null;
+    const filePath = fileRadio?.dataset.filePath || fileValue;
+    if (!filePath) return null;
+    let sizeBytes = undefined;
+    if (fileRadio?.dataset.sizeBytes) {
+      const parsed = Number(fileRadio.dataset.sizeBytes);
+      if (Number.isFinite(parsed)) sizeBytes = parsed;
+    }
+    const revision = versionValue || card.dataset.versionId || 'main';
+    const thumbnail = card.dataset.thumbnail || card.querySelector('.civi-thumb img')?.src || '';
+    return {
+      provider: 'huggingface',
+      repo_id: modelId,
+      model_url_or_id: modelId,
+      file_path: filePath,
+      file: filePath,
+      revision,
+      model_type: modelType,
+      subdir,
+      custom_filename: filename || undefined,
+      num_connections: settings?.numConnections || 1,
+      force_redownload: force,
+      token: settings?.hfToken || '',
+      hf_token: settings?.hfToken || '',
+      model_name: card.dataset.modelName || modelId,
+      version_name: card.dataset.versionName || revision,
+      thumbnail,
+      known_size: sizeBytes,
+      size_bytes: sizeBytes,
+    };
+  }
+
+  const versionId = versionValue ? Number(versionValue) : undefined;
+  const fileId = fileValue ? Number(fileValue) : undefined;
 
   return {
+    provider: 'civitai',
     model_url_or_id: modelId,
     model_version_id: Number.isFinite(versionId) ? versionId : undefined,
     file_id: Number.isFinite(fileId) ? fileId : undefined,

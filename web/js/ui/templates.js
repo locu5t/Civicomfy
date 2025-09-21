@@ -31,7 +31,11 @@ export function modalTemplate(settings = {}) {
         <div id="civitai-tab-search" class="civitai-downloader-tab-content">
           <form id="civitai-search-form">
             <div class="civitai-search-controls">
-              <input type="text" id="civitai-search-query" class="civitai-input" placeholder="Search Civitai or paste a Model URL/ID...">
+              <input type="text" id="civitai-search-query" class="civitai-input" placeholder="Search models or paste a URL/ID...">
+              <select id="civitai-search-provider" class="civitai-select">
+                <option value="civitai">Civitai</option>
+                <option value="huggingface">Hugging Face</option>
+              </select>
               <select id="civitai-search-type" class="civitai-select">
                 <option value="any">Any Type</option>
               </select>
@@ -59,16 +63,21 @@ export function modalTemplate(settings = {}) {
             <div class="civitai-settings-container">
               <div class="civitai-settings-section">
                 <h4>API & Defaults</h4>
-                <div class="civitai-form-group">
-                  <label for="civitai-settings-api-key">Civitai API Key (Optional)</label>
-                  <input type="password" id="civitai-settings-api-key" class="civitai-input" placeholder="Enter API key for higher limits / authenticated access" autocomplete="new-password">
-                  <p style="font-size: 0.85em; color: #bbb; margin-top: 5px;">Needed for some downloads/features. Find keys at civitai.com/user/account</p>
-                </div>
-                <div class="civitai-form-group">
-                  <label for="civitai-settings-connections">Default Connections</label>
-                  <input type="number" id="civitai-settings-connections" class="civitai-input" value="1" min="1" max="16" step="1" required disabled>
-                  <p style="font-size: 0.85em; color: #bbb; margin-top: 5px;">Disabled. Only single connection possible for now</p>
-                </div>
+              <div class="civitai-form-group">
+                <label for="civitai-settings-api-key">Civitai API Key (Optional)</label>
+                <input type="password" id="civitai-settings-api-key" class="civitai-input" placeholder="Enter API key for higher limits / authenticated access" autocomplete="new-password">
+                <p style="font-size: 0.85em; color: #bbb; margin-top: 5px;">Needed for some downloads/features. Find keys at civitai.com/user/account</p>
+              </div>
+              <div class="civitai-form-group">
+                <label for="civitai-settings-hf-token">Hugging Face Token (Optional)</label>
+                <input type="password" id="civitai-settings-hf-token" class="civitai-input" placeholder="Enter token for private Hugging Face repos" autocomplete="new-password">
+                <p style="font-size: 0.85em; color: #bbb; margin-top: 5px;">Required only for private or gated models. Create tokens at huggingface.co/settings/tokens</p>
+              </div>
+              <div class="civitai-form-group">
+                <label for="civitai-settings-connections">Default Connections</label>
+                <input type="number" id="civitai-settings-connections" class="civitai-input" value="1" min="1" max="16" step="1" required disabled>
+                <p style="font-size: 0.85em; color: #bbb; margin-top: 5px;">Disabled. Only single connection possible for now</p>
+              </div>
                 <div class="civitai-form-group">
                   <label for="civitai-settings-default-type">Default Model Type (for saving)</label>
                   <select id="civitai-settings-default-type" class="civitai-select" required></select>

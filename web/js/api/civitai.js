@@ -50,8 +50,19 @@ export class CivitaiDownloaderAPI {
   }
 
   static async queueDownload(payload) {
+    if (payload?.provider === 'huggingface') {
+      return await this.queueHuggingFaceDownload(payload);
+    }
     // Alias of downloadModel to keep terminology aligned with queue-based UI.
     return await this.downloadModel(payload);
+  }
+
+  static async queueHuggingFaceDownload(payload) {
+    return await this._request("/huggingface/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
   }
 
   static async queueDownloads(items = []) {
@@ -72,6 +83,14 @@ export class CivitaiDownloaderAPI {
 
   static async getModelDetails(params) {
     return await this._request("/civitai/get_model_details", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  }
+
+  static async getHuggingFaceDetails(params) {
+    return await this._request("/huggingface/details", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
@@ -100,6 +119,14 @@ export class CivitaiDownloaderAPI {
 
   static async searchModels(params) {
     return await this._request("/civitai/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+  }
+
+  static async searchHuggingFaceModels(params) {
+    return await this._request("/huggingface/search", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),

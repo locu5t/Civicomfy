@@ -75,7 +75,8 @@ class DownloadManager:
                 'url', 'output_path', 'num_connections', 'api_key', 'known_size',
                 'civitai_model_info', 'civitai_version_info', 'civitai_primary_file',
                 'thumbnail', 'filename', 'model_url_or_id', 'model_version_id', 'model_type',
-                'custom_filename', 'force_redownload' # Add force_redownload too
+                'custom_filename', 'force_redownload', 'provider',
+                'huggingface_repo_id', 'huggingface_revision', 'huggingface_path'
             ]
             for key in required_for_retry:
                 if key not in download_info:
@@ -834,6 +835,8 @@ class DownloadManager:
         final_status = "failed"
         error_msg = None
 
+        provider = (download_info.get("provider") or "civitai").lower()
+
         try:
             print(f"[Downloader Wrapper {download_id}] Preparing download for '{filename}'.")
             downloader = ChunkDownloader(
@@ -863,24 +866,26 @@ class DownloadManager:
             if success:
                 final_status = "completed"
                 print(f"[Downloader Wrapper {download_id}] Download completed successfully for '{filename}'.")
-                try:
-                    # First cache media and preview so metadata can reference them
-                    cached_media = []
+                if provider == "civitai":
                     try:
-                        cached_media = self._cache_version_media(download_info)
-                    except Exception as _cm_err:
-                        print(f"[Downloader Wrapper {download_id}] Media cache step failed: {_cm_err}")
                         cached_media = []
+                        try:
+                            cached_media = self._cache_version_media(download_info)
+                        except Exception as _cm_err:
+                            print(f"[Downloader Wrapper {download_id}] Media cache step failed: {_cm_err}")
+                            cached_media = []
 
-                    preview_path = None
-                    try:
-                        preview_path = self._download_and_save_preview(download_info)
-                    except Exception as _pv_err:
-                        print(f"[Downloader Wrapper {download_id}] Preview step failed: {_pv_err}")
+                        preview_path = None
+                        try:
+                            preview_path = self._download_and_save_preview(download_info)
+                        except Exception as _pv_err:
+                            print(f"[Downloader Wrapper {download_id}] Preview step failed: {_pv_err}")
 
-                    self._save_civitai_metadata(download_info, cached_media=cached_media, preview_path=preview_path)
-                except Exception as meta_err:
-                     print(f"[Downloader Wrapper {download_id}] Error during post-download metadata/preview saving: {meta_err}")
+                        self._save_civitai_metadata(download_info, cached_media=cached_media, preview_path=preview_path)
+                    except Exception as meta_err:
+                        print(f"[Downloader Wrapper {download_id}] Error during post-download metadata/preview saving: {meta_err}")
+                else:
+                    print(f"[Downloader Wrapper {download_id}] Provider '{provider}' detected; skipping Civitai metadata pipeline.")
 
             elif downloader.is_cancelled:
                 final_status = "cancelled"
