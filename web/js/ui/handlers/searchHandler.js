@@ -10,6 +10,83 @@ const RESERVED_SEGMENTS = new Set([
 const CIVITAI_HOSTS = new Set(['civitai.com', 'www.civitai.com']);
 const HUGGINGFACE_HOSTS = new Set(['huggingface.co', 'www.huggingface.co']);
 
+const IMAGE_EXT_PATTERN = /\.(png|jpe?g|gif|webp|bmp|svg|avif)(?:\?|$)/i;
+const VIDEO_EXT_PATTERN = /\.(mp4|webm|mov|mkv|gifv)(?:\?|$)/i;
+
+function isVideoUrl(url = '') {
+  try {
+    return VIDEO_EXT_PATTERN.test(String(url));
+  } catch (_) {
+    return false;
+  }
+}
+
+function isImageUrl(url = '') {
+  try {
+    return IMAGE_EXT_PATTERN.test(String(url));
+  } catch (_) {
+    return false;
+  }
+}
+
+function collectMediaEntriesFromDetails(details) {
+  if (!details) return [];
+  const combined = [];
+  const seen = new Set();
+  const pushEntry = (entry) => {
+    if (!entry || typeof entry !== 'object') return;
+    const url = entry.url || entry.downloadUrl;
+    if (!url) return;
+    const path = entry.path || entry.name || url;
+    const key = `${path}|${url}`.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    let type = entry.type ? String(entry.type).toLowerCase() : '';
+    if (!type) {
+      if (isVideoUrl(url)) type = 'video';
+      else if (isImageUrl(url)) type = 'image';
+      else type = 'file';
+    }
+    combined.push({
+      url,
+      downloadUrl: entry.downloadUrl || url,
+      path,
+      name: entry.name || path,
+      type,
+      sizeBytes: entry.size_bytes ?? entry.sizeBytes,
+    });
+  };
+
+  const candidates = [];
+  if (Array.isArray(details.media_files)) candidates.push(details.media_files);
+  if (details.huggingface && Array.isArray(details.huggingface.media_files)) {
+    candidates.push(details.huggingface.media_files);
+  }
+
+  candidates.forEach((list) => {
+    list.forEach(pushEntry);
+  });
+
+  return combined;
+}
+
+function resolvePreferredThumbnail(details, mediaEntries) {
+  const media = Array.isArray(mediaEntries) ? mediaEntries : [];
+  const explicit = details?.thumbnail_url || details?.thumbnail;
+  if (explicit) {
+    return { url: explicit, media, image: media.find((entry) => entry.type === 'image') || null };
+  }
+  const firstImage = media.find((entry) => entry.type === 'image');
+  if (firstImage) {
+    return { url: firstImage.url, media, image: firstImage };
+  }
+  const firstMedia = media.find((entry) => entry.url);
+  if (firstMedia) {
+    return { url: firstMedia.url, media, image: null };
+  }
+  return { url: '', media, image: null };
+}
+
 function escapeRegex(text) {
   return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -298,6 +375,9 @@ function parseHuggingFaceLookup(value) {
 function buildSearchHitFromDetails(details) {
   if (!details || details.success === false) return null;
 
+  const mediaEntries = collectMediaEntriesFromDetails(details);
+  const preferredThumb = resolvePreferredThumbnail(details, mediaEntries);
+
   const provider = (details.provider || '').toString().toLowerCase() || 'civitai';
 
   if (provider === 'huggingface') {
@@ -339,12 +419,14 @@ function buildSearchHitFromDetails(details) {
       versions,
       version: selectedVersion,
       baseModel: details.base_model || selectedVersion.baseModel || '',
-      thumbnailUrl: details.thumbnail_url || details.thumbnail || null,
+      thumbnailUrl: preferredThumb.url || null,
+      previewImage: preferredThumb.url || null,
       downloads: metrics.downloadCount,
       likes: metrics.thumbsUpCount,
       provider: 'huggingface',
       tags: Array.isArray(details.tags) ? details.tags : [],
       raw: { directDetails: true, provider: 'huggingface', data: details },
+      mediaFiles: mediaEntries,
     };
 
     if (details.creator_username) {
@@ -416,8 +498,8 @@ function buildSearchHitFromDetails(details) {
     type: inferredType,
     metrics,
     stats: metrics,
-    thumbnailUrl: details.thumbnail_url,
-    previewImage: details.thumbnail_url,
+    thumbnailUrl: preferredThumb.url || details.thumbnail_url,
+    previewImage: preferredThumb.url || details.thumbnail_url,
     creator: details.creator_username || undefined,
     user: details.creator_username ? { username: details.creator_username } : undefined,
     versions,
@@ -426,6 +508,7 @@ function buildSearchHitFromDetails(details) {
     baseModel: inferredBaseModel,
     provider: 'civitai',
     raw: { directDetails: true, data: details },
+    mediaFiles: mediaEntries,
   };
 
   if (details.nsfw_level !== undefined && details.nsfw_level !== null) {
@@ -643,6 +726,21 @@ async function handleQuickDownload(card, ctx) {
       const message = details?.details || details?.error || 'Failed to load model details';
       ctx.toast(message, 'error');
       return;
+    }
+
+    const mediaEntries = collectMediaEntriesFromDetails(details);
+    const preferredThumb = resolvePreferredThumbnail(details, mediaEntries);
+    if (mediaEntries.length > 0) {
+      card.__civiMediaFiles = mediaEntries;
+    }
+    if (preferredThumb.url) {
+      card.dataset.thumbnail = preferredThumb.url;
+    }
+    if (preferredThumb.image && preferredThumb.image.url) {
+      const thumbImg = card.querySelector('.civi-thumb img');
+      if (thumbImg) {
+        thumbImg.src = preferredThumb.image.url;
+      }
     }
 
     const modelTypeOptions = ctx.getModelTypeOptions();

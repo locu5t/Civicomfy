@@ -3,7 +3,7 @@
 # ================================================
 import json
 import os
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 from aiohttp import web
 
@@ -14,8 +14,23 @@ from ...utils.helpers import parse_huggingface_input
 
 prompt_server = server.PromptServer.instance
 
-_SKIP_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".mp4", ".webm"}
-_SKIP_FILENAMES = {"readme.md", "license", "license.md", "license.txt", "readme"}
+_MEDIA_IMAGE_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".svg",
+    ".avif",
+}
+_MEDIA_VIDEO_EXTENSIONS = {
+    ".mp4",
+    ".webm",
+    ".mov",
+    ".mkv",
+    ".gifv",
+}
 
 
 def _extract_base_model(tags: Optional[Iterable[Any]]) -> str:
@@ -46,15 +61,22 @@ def _pick_thumbnail(model_info: Dict[str, Any]) -> Optional[str]:
 def _should_include_file(path: str) -> bool:
     if not path:
         return False
-    if path.startswith("."):
+    normalized = path.strip()
+    if not normalized:
         return False
-    lowered = path.lower()
-    if lowered in _SKIP_FILENAMES:
+    if normalized.startswith("."):
         return False
-    _, ext = os.path.splitext(lowered)
-    if ext in _SKIP_EXTENSIONS:
+    if normalized.endswith("/"):
         return False
     return True
+
+
+def _resolve_file_path(sibling: Dict[str, Any]) -> Optional[str]:
+    for key in ("rfilename", "path", "filename"):
+        value = sibling.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def _file_priority(path: str) -> tuple:
@@ -80,7 +102,7 @@ def _file_priority(path: str) -> tuple:
 def _build_file_entry(repo_id: str, revision: str, sibling: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not isinstance(sibling, dict):
         return None
-    file_path = sibling.get("rfilename")
+    file_path = _resolve_file_path(sibling)
     if not isinstance(file_path, str) or not _should_include_file(file_path):
         return None
 
@@ -112,6 +134,55 @@ def _build_file_entry(repo_id: str, revision: str, sibling: Dict[str, Any]) -> O
         "downloadable": True,
     }
     return entry
+
+
+def _collect_media_files(repo_id: str, revision: str, siblings: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    media: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for sibling in siblings or []:
+        if not isinstance(sibling, dict):
+            continue
+        file_path = _resolve_file_path(sibling)
+        if not file_path:
+            continue
+
+        lowered = file_path.lower()
+        _, ext = os.path.splitext(lowered)
+        media_type = None
+        if ext in _MEDIA_IMAGE_EXTENSIONS:
+            media_type = "image"
+        elif ext in _MEDIA_VIDEO_EXTENSIONS:
+            media_type = "video"
+        else:
+            continue
+
+        try:
+            size_raw = sibling.get("size")
+            if size_raw is None and isinstance(sibling.get("lfs"), dict):
+                size_raw = sibling["lfs"].get("size")
+            size_bytes = int(size_raw) if size_raw is not None else None
+        except (TypeError, ValueError):
+            size_bytes = None
+
+        key = file_path.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        url = HuggingFaceAPI.build_file_url(repo_id, revision, file_path)
+        media.append(
+            {
+                "name": file_path,
+                "path": file_path,
+                "type": media_type,
+                "url": url,
+                "downloadUrl": url,
+                "size_bytes": size_bytes,
+            }
+        )
+
+    return media
 
 
 @prompt_server.routes.post("/huggingface/details")
@@ -156,7 +227,7 @@ async def route_huggingface_details(request):
         library = model_info.get("library_name") or model_info.get("cardData", {}).get("library_name")
 
         siblings = model_info.get("siblings") or []
-        file_entries = []
+        file_entries: List[Dict[str, Any]] = []
         for sibling in siblings:
             entry = _build_file_entry(repo_id, revision, sibling)
             if entry:
@@ -165,6 +236,16 @@ async def route_huggingface_details(request):
         file_entries.sort(key=lambda f: _file_priority(f.get("name", "")))
         if file_entries:
             file_entries[0]["primary"] = True
+
+        media_files = _collect_media_files(repo_id, revision, siblings)
+        thumbnail_url = _pick_thumbnail(model_info)
+        if not thumbnail_url and media_files:
+            thumbnail_url = next(
+                (item.get("url") for item in media_files if item.get("type") == "image" and item.get("url")),
+                None,
+            )
+        if not thumbnail_url and media_files:
+            thumbnail_url = next((item.get("url") for item in media_files if item.get("url")), None)
 
         version_entry = {
             "id": revision,
@@ -191,7 +272,8 @@ async def route_huggingface_details(request):
             "tags": model_info.get("tags") or [],
             "files": file_entries,
             "model_versions": [version_entry],
-            "thumbnail_url": _pick_thumbnail(model_info),
+            "thumbnail_url": thumbnail_url,
+            "media_files": media_files,
             "stats": {
                 "downloads": model_info.get("downloads"),
                 "likes": model_info.get("likes"),
@@ -199,6 +281,7 @@ async def route_huggingface_details(request):
             "huggingface": {
                 "repo_id": repo_id,
                 "revision": revision,
+                "media_files": media_files,
             },
             "raw": model_info,
         }
