@@ -767,6 +767,80 @@ async function handleQueue(card, ctx) {
       ctx.toast('Please select a file or version to download.', 'error');
       return;
     }
+    if (Array.isArray(payload)) {
+      let responses;
+      try {
+        responses = await ctx.api.queueDownloads(payload);
+      } catch (error) {
+        console.error('Queue downloads error', error);
+        ctx.toast(error?.details || error?.message || 'Failed to queue downloads', 'error');
+        return;
+      }
+      const normalized = Array.isArray(responses) ? responses : [];
+      const successes = [];
+      const failures = [];
+      const existing = [];
+      normalized.forEach((res, index) => {
+        const status = (res?.status || '').toLowerCase();
+        const downloadId = res?.download_id || res?.queueId || res?.id;
+        if (status === 'queued' && downloadId) {
+          successes.push({ response: res, downloadId: downloadId, index });
+          return;
+        }
+        if (status === 'exists' || status === 'exists_size_mismatch') {
+          existing.push(res);
+          return;
+        }
+        failures.push(res);
+      });
+      if (successes.length === 0) {
+        if (existing.length > 0 && failures.length === 0) {
+          const existingMessage = existing.length === 1
+            ? (existing[0]?.message || existing[0]?.details || 'Selected file already exists.')
+            : `${existing.length} selected files already exist.`;
+          ctx.toast(existingMessage, 'info');
+          toggleDrawer(card, false);
+          return;
+        }
+        const firstFailure = failures.find(item => item && (item.details || item.message || item.error));
+        let failureMessage = firstFailure?.details || firstFailure?.message || firstFailure?.error || 'Downloads did not queue';
+        if (existing.length > 0) {
+          failureMessage += ` ${existing.length} file${existing.length === 1 ? '' : 's'} already exist.`;
+        }
+        ctx.toast(failureMessage, 'error');
+        return;
+      }
+      const queueIds = successes.map(item => String(item.downloadId));
+      attachQueueId(card, queueIds);
+      if (typeof ctx.options.onQueueAttached === 'function') {
+        ctx.options.onQueueAttached(card, queueIds[0], { queuedIds: queueIds, responses: normalized });
+      }
+      const successCount = successes.length;
+      const failureCount = failures.length;
+      const existingCount = existing.length;
+      let toastType = 'success';
+      if (failureCount > 0) {
+        toastType = 'warning';
+      } else if (existingCount > 0) {
+        toastType = 'info';
+      }
+      let toastMessage = `Queued ${successCount} Hugging Face file${successCount === 1 ? '' : 's'}.`;
+      if (existingCount > 0) {
+        toastMessage += ` ${existingCount} file${existingCount === 1 ? '' : 's'} already exist.`;
+      }
+      if (failureCount > 0) {
+        toastMessage += ` ${failureCount} file${failureCount === 1 ? '' : 's'} failed to queue.`;
+        console.warn('Some Hugging Face files failed to queue', failures);
+      }
+      ctx.toast(toastMessage, toastType);
+      toggleDrawer(card, false);
+      if (typeof ctx.options.onQueueSuccess === 'function') {
+        successes.forEach(item => {
+          ctx.options.onQueueSuccess(item.downloadId, item.response, card);
+        });
+      }
+      return;
+    }
     const response = await ctx.api.queueDownload(payload);
     if (response?.status === 'exists' || response?.status === 'exists_size_mismatch') {
       ctx.toast(response.message || 'Model already downloaded.', 'info');
@@ -803,8 +877,6 @@ function buildPayloadFromDrawer(card, settings) {
   if (!modelId) return null;
   const versionSelect = card.querySelector('.civi-version-select');
   const versionValue = versionSelect && versionSelect.value ? versionSelect.value : undefined;
-  const fileRadio = card.querySelector('.civi-file-radio:checked');
-  const fileValue = fileRadio ? fileRadio.value : undefined;
   const modelType = card.querySelector('.civi-target-root')?.value || card.dataset.modelType || settings?.defaultModelType || '';
   const folders = collectFolderSegments(card);
   const subdirParts = [folders.baseSegment, folders.modelSegment, folders.versionSegment].filter(Boolean);
@@ -812,28 +884,20 @@ function buildPayloadFromDrawer(card, settings) {
   const filename = card.querySelector('.civi-filename-input')?.value?.trim() || '';
   const force = !!card.querySelector('.civi-force-checkbox')?.checked;
   const provider = (card.dataset.provider || 'civitai').toLowerCase();
+  const isHuggingFace = provider === 'huggingface';
 
-  if (provider === 'huggingface') {
-    if (!fileValue) return null;
-    const filePath = fileRadio?.dataset.filePath || fileValue;
-    if (!filePath) return null;
-    let sizeBytes = undefined;
-    if (fileRadio?.dataset.sizeBytes) {
-      const parsed = Number(fileRadio.dataset.sizeBytes);
-      if (Number.isFinite(parsed)) sizeBytes = parsed;
-    }
+  if (isHuggingFace) {
+    const checkboxes = Array.from(card.querySelectorAll('.civi-file-checkbox:checked'));
+    if (checkboxes.length === 0) return null;
     const revision = versionValue || card.dataset.versionId || 'main';
     const thumbnail = card.dataset.thumbnail || card.querySelector('.civi-thumb img')?.src || '';
-    return {
+    const basePayload = {
       provider: 'huggingface',
       repo_id: modelId,
       model_url_or_id: modelId,
-      file_path: filePath,
-      file: filePath,
       revision,
       model_type: modelType,
       subdir,
-      custom_filename: filename || undefined,
       num_connections: settings?.numConnections || 1,
       force_redownload: force,
       token: settings?.hfToken || '',
@@ -841,10 +905,37 @@ function buildPayloadFromDrawer(card, settings) {
       model_name: card.dataset.modelName || modelId,
       version_name: card.dataset.versionName || revision,
       thumbnail,
-      known_size: sizeBytes,
-      size_bytes: sizeBytes,
     };
+    const payloads = checkboxes
+      .map((checkbox) => {
+        const value = checkbox.value;
+        const filePath = checkbox.dataset.filePath || value;
+        if (!filePath) return null;
+        let sizeBytes;
+        if (checkbox.dataset.sizeBytes) {
+          const parsed = Number(checkbox.dataset.sizeBytes);
+          if (Number.isFinite(parsed)) sizeBytes = parsed;
+        }
+        const payload = {
+          ...basePayload,
+          file_path: filePath,
+          file: filePath,
+          known_size: sizeBytes,
+          size_bytes: sizeBytes,
+        };
+        if (checkboxes.length === 1 && filename) {
+          payload.custom_filename = filename;
+        }
+        return payload;
+      })
+      .filter(Boolean);
+
+    if (payloads.length === 0) return null;
+    return payloads.length === 1 ? payloads[0] : payloads;
   }
+
+  const fileRadio = card.querySelector('.civi-file-radio:checked');
+  const fileValue = fileRadio ? fileRadio.value : undefined;
 
   const versionId = versionValue ? Number(versionValue) : undefined;
   const fileId = fileValue ? Number(fileValue) : undefined;
@@ -1049,7 +1140,19 @@ function ensurePathPreviewListeners(card) {
 }
 
 function attachQueueId(card, queueId) {
-  card.dataset.queueId = queueId;
+  if (!card) return;
+  const ids = Array.isArray(queueId)
+    ? queueId.filter(id => id !== undefined && id !== null).map(id => String(id))
+    : (queueId !== undefined && queueId !== null ? [String(queueId)] : []);
+  if (card.dataset) {
+    if (ids.length > 0) {
+      card.dataset.queueId = ids[0];
+      card.dataset.queueIds = ids.join(',');
+    } else {
+      delete card.dataset.queueId;
+      delete card.dataset.queueIds;
+    }
+  }
   let badge = card.querySelector('.civi-queued-badge');
   if (!badge) {
     badge = document.createElement('span');
@@ -1057,6 +1160,6 @@ function attachQueueId(card, queueId) {
     const meta = card.querySelector('.civi-meta');
     if (meta) meta.appendChild(badge);
   }
-  badge.textContent = 'Queued';
+  badge.textContent = ids.length > 1 ? `Queued (${ids.length})` : 'Queued';
 }
 

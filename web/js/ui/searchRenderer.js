@@ -174,6 +174,8 @@ export function toggleDrawer(cardEl, show = true) {
 
 export function populateDrawerWithDetails(cardEl, details, modelTypeOptions = [], defaults = {}) {
   if (!cardEl || !details) return;
+  const provider = (cardEl.dataset.provider || 'civitai').toLowerCase();
+  const isHuggingFace = provider === 'huggingface';
   const previewEl = cardEl.querySelector('.civi-drawer-preview');
   if (previewEl) {
     const modelTitle = details.model_name || details.name || '';
@@ -219,15 +221,23 @@ export function populateDrawerWithDetails(cardEl, details, modelTypeOptions = []
       row.className = 'civi-file-row';
       const label = document.createElement('label');
       const input = document.createElement('input');
-      input.type = 'radio';
-      input.name = `file-${cardEl.dataset.modelId}-${cardEl.dataset.versionId || ''}`;
-      input.className = 'civi-file-radio';
+      input.type = isHuggingFace ? 'checkbox' : 'radio';
+      if (!isHuggingFace) {
+        input.name = `file-${cardEl.dataset.modelId}-${cardEl.dataset.versionId || ''}`;
+      }
+      input.className = isHuggingFace ? 'civi-file-checkbox' : 'civi-file-radio';
       input.value = value;
       if (file.primary || file.isPrimary) input.checked = true;
       if (disabled) input.disabled = true;
       if (filePath) input.dataset.filePath = filePath;
       if (file.downloadUrl) input.dataset.downloadUrl = file.downloadUrl;
       if (Number.isFinite(sizeBytes)) input.dataset.sizeBytes = String(sizeBytes);
+      if (isHuggingFace && (file.primary || file.isPrimary)) {
+        input.dataset.primary = 'true';
+      }
+      if (isHuggingFace && file.name) {
+        input.dataset.filename = file.name;
+      }
       label.appendChild(input);
       label.appendChild(document.createTextNode(' '));
 
@@ -245,9 +255,14 @@ export function populateDrawerWithDetails(cardEl, details, modelTypeOptions = []
       row.appendChild(label);
       filesList.appendChild(row);
     });
-    const firstAvailable = filesList.querySelector('.civi-file-radio:not([disabled])');
-    if (firstAvailable && !filesList.querySelector('.civi-file-radio:checked')) {
-      firstAvailable.checked = true;
+    if (isHuggingFace) {
+      ensureHuggingFaceDefaultSelection(filesList);
+      setupHuggingFaceFileSelection(filesList);
+    } else {
+      const firstAvailable = filesList.querySelector('.civi-file-radio:not([disabled])');
+      if (firstAvailable && !filesList.querySelector('.civi-file-radio:checked')) {
+        firstAvailable.checked = true;
+      }
     }
   }
 
@@ -300,6 +315,86 @@ export function populateDrawerWithDetails(cardEl, details, modelTypeOptions = []
   if (filenameInput && defaults?.filename !== undefined) {
     filenameInput.value = defaults.filename;
   }
+}
+
+function ensureHuggingFaceDefaultSelection(filesList) {
+  if (!filesList) return;
+  const checkboxes = Array.from(filesList.querySelectorAll('.civi-file-checkbox:not([disabled])'));
+  if (checkboxes.length === 0) return;
+  if (checkboxes.some(cb => cb.checked)) return;
+  const primary = checkboxes.find(cb => cb.dataset.primary === 'true');
+  const fallback = checkboxes[0];
+  const toSelect = primary || fallback;
+  if (toSelect) {
+    toSelect.checked = true;
+  }
+}
+
+function setupHuggingFaceFileSelection(filesList) {
+  if (!filesList) return;
+  const checkboxes = Array.from(filesList.querySelectorAll('.civi-file-checkbox'));
+  if (checkboxes.length <= 1) return;
+
+  const existing = filesList.querySelector('.civi-select-all-row');
+  if (existing) existing.remove();
+
+  const selectAllRow = document.createElement('div');
+  selectAllRow.className = 'civi-file-row civi-select-all-row';
+  const label = document.createElement('label');
+  label.className = 'civi-select-all-label';
+  const selectAllInput = document.createElement('input');
+  selectAllInput.type = 'checkbox';
+  selectAllInput.className = 'civi-select-all-checkbox';
+  label.appendChild(selectAllInput);
+  label.appendChild(document.createTextNode(' Select All'));
+  const countSpan = document.createElement('span');
+  countSpan.className = 'civi-select-count';
+  label.appendChild(countSpan);
+  selectAllRow.appendChild(label);
+  filesList.insertBefore(selectAllRow, filesList.firstChild);
+
+  const getCheckboxes = () => Array.from(filesList.querySelectorAll('.civi-file-checkbox'));
+  const getEnabledCheckboxes = () => getCheckboxes().filter(cb => !cb.disabled);
+
+  const updateSelectAllState = () => {
+    const enabled = getEnabledCheckboxes();
+    const total = enabled.length;
+    const selected = enabled.filter(cb => cb.checked).length;
+
+    if (total === 0) {
+      selectAllInput.checked = false;
+      selectAllInput.indeterminate = false;
+      countSpan.textContent = '';
+      return;
+    }
+
+    if (selected === 0) {
+      selectAllInput.checked = false;
+      selectAllInput.indeterminate = false;
+    } else if (selected === total) {
+      selectAllInput.checked = true;
+      selectAllInput.indeterminate = false;
+    } else {
+      selectAllInput.checked = false;
+      selectAllInput.indeterminate = true;
+    }
+
+    countSpan.textContent = ` (${selected}/${total})`;
+  };
+
+  selectAllInput.addEventListener('change', () => {
+    const enabled = getEnabledCheckboxes();
+    enabled.forEach(cb => {
+      cb.checked = selectAllInput.checked;
+    });
+    updateSelectAllState();
+  });
+
+  getCheckboxes().forEach(cb => {
+    cb.addEventListener('change', updateSelectAllState);
+  });
+
+  updateSelectAllState();
 }
 
 export function renderLocalInfo(cardEl, localInfo) {
