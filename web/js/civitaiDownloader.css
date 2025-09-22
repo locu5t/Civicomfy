@@ -884,6 +884,21 @@
 .civi-file-row {
     font-size: 0.85rem;
 }
+.civi-select-all-row {
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-weight: 600;
+}
+.civi-select-all-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.civi-select-count {
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
 .civi-file-unavailable {
     opacity: 0.6;
     margin-left: 6px;
